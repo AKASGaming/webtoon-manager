@@ -1,0 +1,11 @@
+services:
+  webtoon-manager:
+    build: .
+    container_name: webtoon_manager
+    ports:
+      - "8128:8128"
+    volumes:
+      - ./downloads:/app/downloads
+      - ./db:/app/db  # Persist the SQLite database
+      - ./cache/thumbnails:/app/cache/thumbnails
+    restart: unless-stopped

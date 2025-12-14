@@ -1,0 +1,2375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webtoon Manager</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        [v-cloak] {
+            display: none !important;
+        }
+    
+        /* Global scrollbar theme (dark, minimal) */
+        body,
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #111827;
+        }
+    
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background-color: #111827;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #4b5563;
+            border-radius: 9999px;
+            border: 2px solid #111827;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background-color: #10b981;
+        }
+        
+        /* Fix for backdrop-blur ghosting during scroll */
+        .processing-overlay {
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            will-change: transform;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            isolation: isolate;
+        }
+        
+        /* Ensure parent container doesn't cause ghosting */
+        .subscription-card {
+            transform: translateZ(0);
+            will-change: transform;
+        }
+        
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans h-screen flex overflow-hidden">
+    
+    <!-- START: JINJA RAW BLOCK FOR ALL VUE TEMPLATE CONTENT -->
+    {% raw %}
+    <div id="app" v-cloak class="flex w-full h-full overflow-hidden">
+      
+        <!-- Mobile Sidebar Backdrop (only on mobile) -->
+        <div v-if="sidebarOpen" @click="sidebarOpen = false" 
+             class="fixed inset-0 bg-black/60 z-[60] transition-opacity duration-300 md:hidden"></div>
+
+        <!-- SIDEBAR -->
+        <!-- Mobile: Fixed, slides in/out. Desktop: Static, always visible -->
+        <aside :class="[
+                'w-64 sm:w-72 bg-gray-800 border-r border-gray-700 flex flex-col shadow-xl',
+                'md:static md:translate-x-0 md:z-auto',
+                'fixed inset-y-0 left-0 z-[70] transform transition-transform duration-300 ease-in-out',
+                sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+            ]">
+            <!-- Header -->
+            <div class="p-4 sm:p-6 border-b border-gray-700 bg-gradient-to-r from-gray-800 to-gray-800/95">
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 bg-green-600 rounded-lg flex items-center justify-center shadow-lg">
+                        <i class="fa-solid fa-book-open text-white text-lg sm:text-xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h1 class="text-lg sm:text-xl font-bold text-white truncate">WEBTOON</h1>
+                        <p class="text-green-400 text-[10px] sm:text-xs font-semibold">MANAGER</p>
+                    </div>
+                    <button @click="sidebarOpen = false" class="md:hidden w-8 h-8 rounded-lg bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-gray-300 transition-colors">
+                        <i class="fa-solid fa-times text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 overflow-y-auto py-4 px-3 sm:px-4 space-y-2 custom-scrollbar">
+              <button @click="currentView = 'subscriptions'; sidebarOpen = false"
+                  :class="{'bg-green-600 text-white shadow-lg shadow-green-600/20': currentView === 'subscriptions', 'text-gray-300 hover:bg-gray-700/50 hover:text-white': currentView !== 'subscriptions'}"
+                  class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium group">
+                  <i class="fa-solid fa-layer-group text-lg" :class="currentView === 'subscriptions' ? 'text-white' : 'text-gray-400 group-hover:text-green-400'"></i>
+                  <span class="text-sm sm:text-base">Subscriptions</span>
+                  <i v-if="currentView === 'subscriptions'" class="fa-solid fa-chevron-right ml-auto text-xs"></i>
+              </button>
+              
+              <button @click="currentView = 'jobs'; sidebarOpen = false"
+                  :class="{'bg-green-600 text-white shadow-lg shadow-green-600/20': currentView === 'jobs', 'text-gray-300 hover:bg-gray-700/50 hover:text-white': currentView !== 'jobs'}"
+                  class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium group">
+                  <i class="fa-solid fa-terminal text-lg" :class="currentView === 'jobs' ? 'text-white' : 'text-gray-400 group-hover:text-green-400'"></i>
+                  <span class="text-sm sm:text-base">Jobs & Logs</span>
+                  <i v-if="currentView === 'jobs'" class="fa-solid fa-chevron-right ml-auto text-xs"></i>
+              </button>
+            </nav>
+
+            <!-- Footer -->
+            <div class="p-3 sm:p-4 border-t border-gray-700 bg-gray-800/50">
+                <div class="mb-3 space-y-2">
+                    <div class="flex items-center justify-between text-[10px] sm:text-xs text-gray-400">
+                        <span class="font-medium">Version</span>
+                        <span class="text-green-400 font-mono">[[ appVersion ]]</span>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] sm:text-xs text-gray-400">
+                        <span class="font-medium">Last Check</span>
+                        <span class="text-gray-300 font-mono truncate ml-2">[[ formattedLastAutoCheck || '—' ]]</span>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] sm:text-xs text-gray-400">
+                        <span class="font-medium">Next Check</span>
+                        <span class="text-gray-300 font-mono truncate ml-2">[[ formattedNextAutoCheck || '—' ]]</span>
+                    </div>
+                </div>
+            
+                <div class="flex items-center gap-2 pt-2 border-t border-gray-700">
+                    <button class="flex-1 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 flex items-center justify-center gap-2 text-gray-300 hover:text-white transition-colors text-xs sm:text-sm font-medium" 
+                            @click="openGlobalSettings" title="Global settings">
+                        <i class="fas fa-cog"></i>
+                        <span class="hidden sm:inline">Settings</span>
+                    </button>
+                    <button class="flex-1 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 flex items-center justify-center gap-2 text-gray-300 hover:text-white transition-colors text-xs sm:text-sm font-medium" 
+                            @click="openAbout" title="About">
+                        <i class="fas fa-info"></i>
+                        <span class="hidden sm:inline">About</span>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 bg-gray-900 overflow-hidden flex flex-col relative z-0 w-full min-w-0">
+            
+            <!-- Header Bar - Always visible -->
+            <header class="h-16 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4 md:px-6 shadow-md z-[60] relative w-full flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <!-- Hamburger Menu Button (mobile only) -->
+                    <button class="flex md:hidden p-2 rounded bg-gray-700 text-gray-200 hover:bg-gray-600 transition-colors" 
+                            @click="sidebarOpen = true"
+                            aria-label="Open menu">
+                        <i class="fa-solid fa-bars text-lg"></i>
+                    </button>
+                    <h2 class="text-lg font-semibold text-gray-200 capitalize">[[ currentView.replace('_', ' ') ]]</h2>
+                </div>
+            
+                <button v-if="currentView === 'subscriptions'" @click="showAddModal = true" class="bg-green-600 hover:bg-green-500 text-white px-3 md:px-4 py-2 rounded-md text-sm font-medium shadow transition">
+                    <i class="fa-solid fa-plus mr-2"></i>
+                    <span class="hidden sm:inline">Add Subscription</span>
+                    <span class="sm:hidden">Add</span>
+                </button>
+            </header>
+
+            <!-- Scrollable Content Area -->
+            <div class="flex-1 overflow-y-auto p-4 md:p-6 pb-20 scroll-smooth custom-scrollbar">
+                
+                <!-- VIEW: SUBSCRIPTIONS -->
+                <div v-if="currentView === 'subscriptions'">
+                    <!-- Collapsible Toolbar -->
+                    <div class="mb-4 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                        <button @click="toolbarExpanded = !toolbarExpanded" class="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-750 transition-colors">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-filter text-green-400"></i>
+                                <span class="text-white font-medium">Search, Filter & Sort</span>
+                                <span v-if="hasActiveFilters" class="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">Active</span>
+                            </div>
+                            <i :class="['fa-solid transition-transform', toolbarExpanded ? 'fa-chevron-up' : 'fa-chevron-down', 'text-gray-400']"></i>
+                        </button>
+                        
+                        <div v-show="toolbarExpanded" class="border-t border-gray-700 p-4 space-y-4">
+                            <!-- Search -->
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-2">
+                                    <i class="fa-solid fa-search mr-1"></i> Search
+                                </label>
+                                <input v-model="searchQuery" type="text" placeholder="Search by title or artist..." 
+                                       class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                            </div>
+                            
+                            <!-- Filters -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">
+                                        <i class="fa-solid fa-filter mr-1"></i> Filter
+                                    </label>
+                                    <select v-model="filterBy" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                                        <option value="all">All Series</option>
+                                        <option value="auto-download">Auto-download Enabled</option>
+                                        <option value="no-auto-download">Auto-download Disabled</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">
+                                        <i class="fa-solid fa-sort mr-1"></i> Sort By
+                                    </label>
+                                    <select v-model="sortBy" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                                        <option value="title-asc">Title (A-Z)</option>
+                                        <option value="title-desc">Title (Z-A)</option>
+                                        <option value="artist-asc">Artist (A-Z)</option>
+                                        <option value="artist-desc">Artist (Z-A)</option>
+                                        <option value="updated-desc">Last Updated (Newest)</option>
+                                        <option value="updated-asc">Last Updated (Oldest)</option>
+                                        <option value="added-desc">Last Added (Newest)</option>
+                                        <option value="added-asc">Last Added (Oldest)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <!-- Clear Filters Button -->
+                            <div v-if="hasActiveFilters" class="flex justify-end">
+                                <button @click="clearFilters" class="text-sm text-gray-400 hover:text-white flex items-center gap-1">
+                                    <i class="fa-solid fa-times"></i> Clear Filters
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Results Count -->
+                    <div v-if="!loading && hasActiveFilters" class="mb-4 text-sm text-gray-400">
+                        Showing [[ filteredSubscriptions.length ]] of [[ subscriptions.length ]] series
+                    </div>
+                    
+                    <div v-if="loading" class="text-center mt-20 text-gray-500"><i class="fa-solid fa-circle-notch fa-spin text-3xl"></i></div>
+                    
+                    <div v-else-if="filteredSubscriptions.length === 0" class="text-center mt-20 text-gray-500">
+                        <i class="fa-solid fa-inbox text-4xl mb-4"></i>
+                        <p class="text-lg">No series found</p>
+                        <p class="text-sm mt-2">Try adjusting your search or filters</p>
+                    </div>
+                    
+                    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        <!-- CARD: Full Width Thumbnail Style -->
+                        <div v-for="sub in filteredSubscriptions" :key="sub.id" 
+                             class="subscription-card group relative flex flex-col bg-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden hover:border-green-500 hover:shadow-emerald-500/20 transition-all duration-300 cursor-pointer"
+                             @click="!isSeriesProcessing(sub) && openDownloadOptions(sub)">
+                            
+                            <!-- Thumbnail Area -->
+                            <div class="h-48 overflow-hidden relative bg-gray-900">
+                                <img v-if="sub.thumbnail" :src="sub.thumbnail" class="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" loading="lazy">
+                                <div v-else class="w-full h-full flex items-center justify-center text-gray-600 bg-gray-800">
+                                    <i class="fa-regular fa-image text-3xl"></i>
+                                </div>
+                                
+                                <template v-if="isSeriesProcessing(sub)">
+                                    <div class="processing-overlay absolute inset-0 flex flex-col items-center justify-center bg-gray-800/80 z-10">
+                                        <i class="fa-solid fa-circle-notch fa-spin text-3xl text-green-500 mb-2"></i>
+                                        <span class="text-xs text-green-400 font-medium">Processing...</span>
+                                    </div>
+                                </template>
+                                
+                                <!-- Gradient Overlay for Text Readability -->
+                                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-90 z-0"></div>
+                                
+                                <!-- Title Overlay -->
+                                <div class="absolute bottom-0 left-0 right-0 p-4 z-0">
+                                    <h3 class="text-white font-bold text-lg leading-tight truncate shadow-sm">[[ sub.title || 'Untitled' ]]</h3>
+                                    <p class="text-green-400 text-xs font-medium truncate shadow-sm">[[ sub.artist || 'Unknown Artist' ]]</p>
+                                </div>
+                            </div>
+
+                            <!-- Processing Status Bar -->
+                            <div v-if="isSeriesProcessing(sub)" class="px-4 py-2 bg-gray-900/50 border-b border-gray-700">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <p class="text-[10px] text-green-400 font-mono truncate flex-1">
+                                        [[ processingSubtitle(sub) || 'Initializing...' ]]
+                                    </p>
+                                    <span v-if="getProcessingProgress(sub) !== null && getProcessingProgress(sub) !== undefined" class="text-[10px] text-green-300 font-mono">
+                                        [[ Math.round(getProcessingProgress(sub) * 100) ]]%
+                                    </span>
+                                </div>
+                                <div v-if="getProcessingProgress(sub) !== null && getProcessingProgress(sub) !== undefined" class="w-full bg-gray-700 rounded-full h-1 overflow-hidden">
+                                    <div class="bg-green-500 h-full transition-all duration-300" :style="{ width: Math.max(0, Math.min(100, (getProcessingProgress(sub) * 100))) + '%' }"></div>
+                                </div>
+                            </div>
+
+                            <!-- Action Bar -->
+                            <div class="p-3 bg-gray-800 flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2">
+                                <div class="text-xs text-gray-500">
+                                        Last Updated: [[ formatUpdatedDate(sub.last_updated) ]]
+                                    </div>
+                                    <div v-if="sub.auto_download_latest" class="flex items-center gap-1 text-xs text-green-400" title="Auto-download enabled">
+                                        <i class="fa-solid fa-download"></i>
+                                        <span class="hidden sm:inline">Auto</span>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click.stop="openSubSettings(sub)" class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition" title="Settings">
+                                        <i class="fa-solid fa-gear"></i>
+                                    </button>
+                                    <a :href="sub.url" target="_blank" @click.stop class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 rounded transition" title="Open on Webtoon">
+                                        <i class="fa-solid fa-external-link-alt"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: EPISODES -->
+                <div v-if="currentView === 'episodes'" class="max-w-7xl mx-auto w-full">
+                    <!-- Header Section -->
+                    <div class="mb-6">
+                        <button @click="currentView = 'subscriptions'" class="mb-4 flex items-center gap-2 text-gray-400 hover:text-white transition-colors group">
+                            <i class="fa-solid fa-arrow-left group-hover:-translate-x-1 transition-transform"></i>
+                            <span class="font-medium">Back to Subscriptions</span>
+                        </button>
+                        
+                        <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 sm:gap-3 mb-2">
+                                    <img v-if="activeSeries.thumbnail" :src="activeSeries.thumbnail" class="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg border border-gray-700 shadow-lg flex-shrink-0">
+                                    <div class="min-w-0 flex-1">
+                                        <h2 class="text-xl sm:text-2xl md:text-3xl font-bold text-white mb-1 truncate">[[ activeSeries.title ]]</h2>
+                                        <p class="text-green-400 text-xs sm:text-sm font-medium truncate">[[ activeSeries.artist || 'Unknown Artist' ]]</p>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-3 text-xs sm:text-sm text-gray-400">
+                                    <span class="flex items-center gap-1">
+                                        <i class="fa-solid fa-list"></i>
+                                        <span>[[ episodes.length ]] episodes on this page</span>
+                                    </span>
+                                    <span v-if="episodes.length > 0" class="flex items-center gap-1">
+                                        <i class="fa-solid fa-check-circle" :class="episodes.filter(e => e.downloaded).length === episodes.length ? 'text-green-500' : 'text-gray-500'"></i>
+                                        <span>[[ episodes.filter(e => e.downloaded).length ]] / [[ episodes.length ]] downloaded</span>
+                                    </span>
+                                </div>
+                    </div>
+
+                            <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                <button @click="downloadSeries(activeSeries)" class="bg-green-600 hover:bg-green-500 text-white px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow-lg text-sm sm:text-base">
+                                    <i class="fa-solid fa-cloud-arrow-down"></i>
+                                    <span>Download All</span>
+                                </button>
+                                <button @click="confirmDeleteSeries(activeSeries)" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/50 px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-sm sm:text-base">
+                                    <i class="fa-solid fa-trash"></i>
+                                    <span>Unsubscribe</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Search/Filter Bar -->
+                    <div class="mb-6 bg-gray-800 rounded-lg p-4 border border-gray-700">
+                        <div class="flex flex-col sm:flex-row gap-3 items-center">
+                            <div class="flex-1 relative">
+                                <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                <input v-model="episodeSearchQuery" type="text" placeholder="Search episodes by title or number..." 
+                                       class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                        </div>
+                        <div class="flex gap-2">
+                                <button @click="episodeFilter = 'all'" 
+                                        :class="episodeFilter === 'all' ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                                        class="px-4 py-2 rounded-lg font-medium transition-colors text-sm">
+                                    All
+                                </button>
+                                <button @click="episodeFilter = 'downloaded'" 
+                                        :class="episodeFilter === 'downloaded' ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                                        class="px-4 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-1">
+                                    <i class="fa-solid fa-check-circle"></i>
+                                    Downloaded
+                                </button>
+                                <button @click="episodeFilter = 'not-downloaded'" 
+                                        :class="episodeFilter === 'not-downloaded' ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                                        class="px-4 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-1">
+                                    <i class="fa-solid fa-download"></i>
+                                    Not Downloaded
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Episodes Grid -->
+                    <div v-if="filteredEpisodes.length === 0" class="text-center py-16 text-gray-500">
+                        <i class="fa-solid fa-inbox text-4xl mb-4"></i>
+                        <p class="text-lg">No episodes found</p>
+                        <p class="text-sm mt-2">Try adjusting your search or filter</p>
+                    </div>
+                    
+                    <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-8">
+                        <div v-for="ep in filteredEpisodes" :key="ep.id" 
+                             :data-episode-num="ep.ep_num"
+                             class="bg-gray-800 rounded-xl overflow-hidden group relative border-2 transition-all duration-300 cursor-pointer hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20"
+                             :class="ep.downloaded ? 'border-green-600/50' : 'border-gray-700'"
+                             @click="downloadEpisode(ep)">
+                            
+                            <!-- Latest Badge -->
+                            <div v-if="ep.is_latest" class="absolute top-2 left-2 z-20 bg-gradient-to-r from-red-600 to-red-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+                                <i class="fa-solid fa-fire"></i>
+                                <span>LATEST</span>
+                            </div>
+                            
+                            <!-- Download Status Badge -->
+                            <div v-if="ep.downloaded" class="absolute top-2 right-2 z-20 bg-green-600 text-white w-7 h-7 rounded-full flex items-center justify-center shadow-lg">
+                                <i class="fa-solid fa-check text-xs"></i>
+                            </div>
+                            
+                            <!-- Download Button (for not downloaded) -->
+                            <div v-if="!ep.downloaded" class="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button @click.stop="downloadEpisode(ep)" class="bg-green-600 hover:bg-green-500 text-white w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-colors">
+                                    <i class="fa-solid fa-download text-sm"></i>
+                                </button>
+                            </div>
+                            
+                            <!-- Thumbnail -->
+                            <div class="aspect-square overflow-hidden bg-gray-900 relative">
+                                <img :src="ep.display_thumbnail" 
+                                     class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                     :class="ep.downloaded ? 'opacity-100' : 'opacity-80'">
+                                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-60"></div>
+                            </div>
+                            
+                            <!-- Episode Info -->
+                            <div class="p-2 sm:p-3 bg-gray-800">
+                                <div class="flex items-center justify-between mb-1 sm:mb-1.5">
+                                    <span class="text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded" 
+                                          :class="ep.is_latest ? 'bg-red-600/20 text-red-400' : 'bg-gray-700 text-gray-400'">
+                                        #[[ ep.ep_num ]]
+                                    </span>
+                                    <span v-if="ep.published_date" class="text-[9px] sm:text-[10px] text-gray-500 hidden sm:inline">
+                                        [[ formatEpisodeDate(ep.published_date) ]]
+                                    </span>
+                                </div>
+                                <h4 class="text-xs sm:text-sm text-gray-200 font-medium line-clamp-2 leading-tight min-h-[2rem] sm:min-h-[2.5rem]" 
+                                    :title="ep.title">[[ ep.title ]]</h4>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Enhanced Pagination -->
+                    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 bg-gray-800 rounded-lg p-3 sm:p-4 border border-gray-700">
+                        <div class="text-xs sm:text-sm text-gray-400">
+                            Page [[ currentPage ]] of [[ totalPages ]]
+                        </div>
+                        
+                        <div class="flex items-center gap-1 sm:gap-2 flex-wrap justify-center">
+                            <button @click="changePage(1)" 
+                                    :disabled="currentPage <= 1" 
+                                    class="px-2 sm:px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs sm:text-sm"
+                                    title="First page">
+                                <i class="fa-solid fa-angle-double-left"></i>
+                            </button>
+                            <button @click="changePage(currentPage - 1)" 
+                                    :disabled="currentPage <= 1" 
+                                    class="px-3 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs sm:text-sm">
+                                <i class="fa-solid fa-chevron-left sm:mr-1"></i>
+                                <span class="hidden sm:inline">Prev</span>
+                            </button>
+                            
+                            <!-- Page Numbers -->
+                            <div class="flex items-center gap-1">
+                                <button v-for="pageNum in getVisiblePages()" 
+                                        :key="pageNum"
+                                        @click="changePage(pageNum)"
+                                        class="px-2 sm:px-3 py-2 min-w-[2rem] sm:min-w-[2.5rem] rounded-lg font-medium transition-colors text-xs sm:text-sm"
+                                        :class="pageNum === currentPage ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'">
+                                    [[ pageNum ]]
+                                </button>
+                            </div>
+                            
+                            <button @click="changePage(currentPage + 1)" 
+                                    :disabled="currentPage >= totalPages" 
+                                    class="px-3 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs sm:text-sm">
+                                <span class="hidden sm:inline">Next</span>
+                                <i class="fa-solid fa-chevron-right sm:ml-1"></i>
+                            </button>
+                            <button @click="changePage(totalPages)" 
+                                    :disabled="currentPage >= totalPages" 
+                                    class="px-2 sm:px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs sm:text-sm"
+                                    title="Last page">
+                                <i class="fa-solid fa-angle-double-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: JOBS -->
+                <div v-if="currentView === 'jobs'" class="h-full flex flex-col gap-4">
+                    <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col max-h-60">
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-xl font-semibold text-white">Active Jobs</h2>
+                            <p class="text-xs text-gray-400">Auto-updates every 2s</p>
+                        </div>
+                        <div v-if="jobs.length === 0" class="text-gray-500 text-sm">No active jobs.</div>
+                        <div v-else class="overflow-y-auto custom-scrollbar">
+                            <table class="w-full text-xs">
+                                <thead class="text-gray-400 border-b border-gray-700"><tr class="text-left"><th class="py-2">ID</th><th>Title</th><th>Status</th><th>Time</th><th>Action</th></tr></thead>
+                                <tbody>
+                                    <tr v-for="job in jobs" :key="job.id" class="border-b border-gray-700/50">
+                                        <td class="py-2 text-gray-400">#[[ job.id ]]</td>
+                                        <td class="py-2 text-gray-200 truncate max-w-xs">[[ job.comic_title ]]</td>
+                                        <td class="py-2"><span :class="{'text-yellow-400': job.status==='running', 'text-green-400': job.status==='completed', 'text-red-400': job.status==='failed'}">[[ job.status ]]</span></td>
+                                        <td class="py-2 text-gray-500">[[ new Date(job.created_at).toLocaleTimeString() ]]</td>
+                                        <td class="py-2"><button v-if="job.status === 'running'" @click="cancelJob(job.id)" class="text-red-400 hover:text-white">Cancel</button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="bg-black rounded-lg border border-gray-700 flex-1 overflow-y-auto p-3 font-mono text-xs custom-scrollbar" id="terminal">
+                        <div v-if="logs.length === 0" class="text-gray-500 text-center py-8">
+                            <i class="fa-solid fa-terminal text-2xl mb-2"></i>
+                            <p>No logs yet. Start a download to see output here.</p>
+                        </div>
+                        <div v-else>
+                            <div v-for="(line, idx) in logs" :key="idx" 
+                                 class="mb-1"
+                                 :class="{
+                                     'text-red-400': line.includes('✗') || line.includes('Failed') || line.includes('Error') || line.includes('error') || line.includes('ERROR'),
+                                     'text-yellow-400': line.includes('Warning') || line.includes('warning') || line.includes('WARNING'),
+                                     'text-green-300': !line.includes('✗') && !line.includes('Failed') && !line.includes('Error') && !line.includes('error') && !line.includes('ERROR') && !line.includes('Warning') && !line.includes('warning')
+                                 }">
+                                [[ line ]]
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- --- MODALS (MUST BE INSIDE #app div) --- -->
+
+        <!-- 1. ADD SUBSCRIPTION MODAL -->
+        <div v-if="initialized && showAddModal" @click.self="showAddModal = false" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+            <div class="bg-gray-800 rounded-xl w-full max-w-2xl shadow-2xl border border-gray-600 overflow-hidden">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-green-600/20 to-gray-800 p-6 border-b border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center">
+                                <i class="fa-solid fa-plus text-white text-xl"></i>
+                </div>
+                            <div>
+                                <h3 class="text-2xl font-bold text-white">Add New Subscription</h3>
+                                <p class="text-sm text-gray-400 mt-1">Subscribe to one or more Webtoon series</p>
+                            </div>
+                        </div>
+                        <button @click="showAddModal = false" class="w-8 h-8 rounded-lg bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-gray-300 transition-colors">
+                            <i class="fa-solid fa-times"></i>
+                    </button>
+                    </div>
+                </div>
+
+                <!-- Content -->
+                <div class="p-6">
+                    <div v-if="errorMessage" class="bg-red-900/50 border border-red-700 text-red-300 p-4 rounded-lg mb-4 flex items-start gap-3">
+                        <i class="fa-solid fa-circle-exclamation text-lg mt-0.5"></i>
+                        <div class="flex-1">
+                            <p class="font-medium">Error</p>
+                            <p class="text-sm mt-1">[[ errorMessage ]]</p>
+                        </div>
+                    </div>
+
+                    <!-- URL Input -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fa-solid fa-link mr-2 text-green-400"></i>
+                            Webtoon URL(s)
+                        </label>
+                        <textarea v-model="newUrl" 
+                                  @focus="errorMessage = ''" 
+                                  rows="4"
+                                  placeholder="https://www.webtoons.com/en/fantasy/castle-swimmer/list?title_no=1499&#10;https://www.webtoons.com/en/supernatural/jacksons-diary/list?title_no=2446&#10;&#10;Paste multiple URLs, one per line or separated by commas..."
+                                  class="w-full bg-gray-900 border border-gray-700 rounded-lg p-4 text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none resize-none font-mono text-sm">
+                        </textarea>
+                        <p class="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                            <i class="fa-solid fa-info-circle"></i>
+                            You can paste multiple URLs separated by new lines or commas
+                        </p>
+                    </div>
+
+                    <!-- Auto-download Options -->
+                    <div class="mb-6 space-y-3">
+                        <div class="p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                            <div class="flex items-start gap-3">
+                                <input type="checkbox" 
+                                       v-model="addSubscriptionAutoDownload" 
+                                       id="autoDownloadOnAdd"
+                                       class="mt-1 w-5 h-5 rounded bg-gray-800 border-gray-600 text-green-600 focus:ring-green-500 focus:ring-2">
+                                <div class="flex-1">
+                                    <label for="autoDownloadOnAdd" class="block text-sm font-medium text-gray-300 cursor-pointer">
+                                        <i class="fa-solid fa-download mr-2 text-green-400"></i>
+                                        Enable Auto-Download for New Episodes
+                                    </label>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        Automatically download new episodes when they're released. You can change this later in series settings.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                            <div class="flex items-start gap-3">
+                                <input type="checkbox" 
+                                       v-model="addSubscriptionDownloadAll" 
+                                       id="downloadAllOnAdd"
+                                       class="mt-1 w-5 h-5 rounded bg-gray-800 border-gray-600 text-green-600 focus:ring-green-500 focus:ring-2">
+                                <div class="flex-1">
+                                    <label for="downloadAllOnAdd" class="block text-sm font-medium text-gray-300 cursor-pointer">
+                                        <i class="fa-solid fa-download mr-2 text-green-400"></i>
+                                        Download All Episodes After Caching
+                                    </label>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        Automatically download all available episodes once the series has finished caching and scraping.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex flex-col sm:flex-row justify-end gap-3 flex-shrink-0">
+                        <button @click="showAddModal = false" 
+                                class="px-6 py-3 text-gray-300 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors">
+                            Cancel
+                        </button>
+                        <button @click="addSubscription" 
+                                :disabled="processing" 
+                                class="px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-green-600/20">
+                            <span v-if="processing">
+                                <i class="fa-solid fa-spinner fa-spin"></i> 
+                                [[ processingMessage ]]
+                            </span>
+                            <span v-else class="flex items-center gap-2">
+                                <i class="fa-solid fa-plus"></i>
+                                Add Series
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. DOWNLOAD OPTIONS MODAL -->
+        <div v-if="initialized && showDownloadOptionsModal" @click.self="showDownloadOptionsModal = false" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div class="bg-gray-800 rounded-xl w-full max-w-2xl shadow-2xl border border-gray-600 overflow-hidden">
+                <div class="p-6 border-b border-gray-700 flex items-center gap-4 bg-gray-900/50" v-if="modalSeries">
+                    <img :src="modalSeries.thumbnail" class="w-16 h-16 object-cover rounded-md flex-shrink-0 shadow-lg border border-gray-600">
+                    <div>
+                        <h3 class="text-2xl font-bold text-white">[[ modalSeries.title ]]</h3>
+                        <p class="text-sm text-green-400">[[ modalSeries.artist ]]</p>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-lg font-semibold text-white">Quick Download Options</h4>
+                        <button @click="viewAllEpisodes(modalSeries)" class="text-xs text-green-400 hover:text-white"><i class="fa-solid fa-list mr-1"></i> View All Episodes</button>
+                    </div>
+                    
+                    <div class="space-y-2 mb-6 max-h-48 overflow-y-auto custom-scrollbar bg-gray-900/30 rounded-lg p-2">
+                        <div v-if="!modalEpisodes" class="text-center py-4 text-gray-500"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>
+                        <div v-else-if="modalEpisodes.length === 0" class="text-center py-4 text-gray-500">No episodes found.</div>
+                        <div v-else v-for="ep in modalEpisodes" :key="ep.id" class="flex justify-between items-center bg-gray-700/40 p-2 rounded hover:bg-gray-700 transition">
+                            <span class="text-sm text-gray-200 flex items-center gap-2">
+                                <span v-if="ep.is_latest" class="text-[10px] bg-red-600 text-white px-1 rounded">LATEST</span>
+                                <span v-if="ep.downloaded" class="text-green-500" title="Downloaded">
+                                    <i class="fa-solid fa-check-circle"></i>
+                                </span>
+                                #[[ ep.ep_num ]] - [[ ep.title ]]
+                            </span>
+                            <div class="flex items-center gap-2">
+                                <button v-if="!ep.downloaded" 
+                                        @click="downloadEpisode(ep, modalSeries)" 
+                                        class="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1 rounded transition-colors">
+                                    Download
+                                </button>
+                                <button v-else 
+                                        disabled
+                                        class="bg-gray-600 text-gray-400 text-xs px-3 py-1 rounded cursor-not-allowed" 
+                                        title="Already downloaded">
+                                    Downloaded
+                                </button>
+                                <button @click="viewAllEpisodes(modalSeries); scrollToEpisode(ep.ep_num)" 
+                                        class="bg-gray-600 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors" 
+                                        title="View in episodes page">
+                                    <i class="fa-solid fa-arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button @click="downloadSeries(modalSeries); showDownloadOptionsModal = false" class="w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-lg font-bold shadow-lg">
+                        <i class="fa-solid fa-cloud-arrow-down mr-2"></i> Download All Episodes
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. SETTINGS MODAL -->
+        <div v-if="initialized && showSettings" @click.self="showSettings = false" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+            <div class="bg-gray-800 rounded-xl w-full max-w-2xl border border-gray-600 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+                <!-- Header with Tabs -->
+                <div class="bg-gradient-to-r from-gray-800 to-gray-800/95 p-4 border-b border-gray-700">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-2xl font-bold text-white">Settings</h3>
+                        <button @click="showSettings = false" class="w-8 h-8 rounded-lg bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-gray-300 transition-colors">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="flex gap-2 border-b border-gray-700">
+                        <button @click="settingsTab = 'global'" 
+                                :class="settingsTab === 'global' ? 'border-b-2 border-green-500 text-green-400' : 'text-gray-400 hover:text-gray-300'"
+                                class="px-4 py-2 font-medium transition-colors">
+                            <i class="fa-solid fa-folder mr-2"></i>Download Settings
+                        </button>
+                        <button @click="settingsTab = 'app'" 
+                                :class="settingsTab === 'app' ? 'border-b-2 border-green-500 text-green-400' : 'text-gray-400 hover:text-gray-300'"
+                                class="px-4 py-2 font-medium transition-colors">
+                            <i class="fa-solid fa-cog mr-2"></i>App Settings
+                        </button>
+                        <button @click="settingsTab = 'integrations'" 
+                                :class="settingsTab === 'integrations' ? 'border-b-2 border-green-500 text-green-400' : 'text-gray-400 hover:text-gray-300'"
+                                class="px-4 py-2 font-medium transition-colors">
+                            <i class="fa-brands fa-discord mr-2"></i>Integrations
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Content -->
+                <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                    <!-- Global/Download Settings Tab -->
+                    <div v-if="settingsTab === 'global'" class="space-y-4">
+                    <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fa-solid fa-file mr-2 text-green-400"></i>Default Format
+                            </label>
+                            <select v-model="settings.format" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                            <option value="images">Images (Folder)</option>
+                            <option value="cbz">CBZ</option>
+                            <option value="pdf">PDF</option>
+                        </select>
+                            <p class="text-xs text-gray-500 mt-1">Default format for new downloads</p>
+                    </div>
+                    <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fa-solid fa-folder-tree mr-2 text-green-400"></i>Folder Structure
+                            </label>
+                            <select v-model="settings.pathTemplate" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                            <option v-for="opt in globalPathTemplateOptions" :key="opt.value" :value="opt.value">[[ opt.label ]]</option>
+                        </select>
+                            <p class="text-xs text-gray-500 mt-1">How downloaded files are organized</p>
+                    </div>
+                        <div class="border-t border-gray-700 pt-4">
+                            <h4 class="text-sm font-semibold text-gray-300 mb-3">
+                                <i class="fa-solid fa-file-signature mr-2 text-green-400"></i>Episode Naming
+                            </h4>
+                            <p class="text-xs text-gray-500 mb-3">Customize how episode filenames are formatted</p>
+                            <div class="space-y-4">
+                    <div>
+                                    <label class="block text-sm text-gray-400 mb-2">Episode Number Format</label>
+                                    <select v-model="settings.episodeNumberFormat" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm">
+                                        <option value="number">43</option>
+                                        <option value="episode_number">Episode 43</option>
+                                        <option value="ep_number">Ep 43</option>
+                                        <option value="e_number">E43</option>
+                                        <option value="number_padded">043</option>
+                                        <option value="episode_number_padded">Episode 043</option>
+                                        <option value="ep_number_padded">Ep 043</option>
+                                        <option value="e_number_padded">E043</option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">How episode numbers appear in filenames</p>
+                    </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">Episode Number Padding</label>
+                                    <input type="number" v-model.number="settings.episodeNumberPadding" min="0" max="5" 
+                                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                                    <p class="text-xs text-gray-500 mt-1">Zero-pad episode numbers (0 = no padding, 3 = 001, 4 = 0001, etc.)</p>
+                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">Separator</label>
+                                    <input type="text" v-model="settings.episodeSeparator" maxlength="10"
+                                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm">
+                                    <p class="text-xs text-gray-500 mt-1">Character(s) between episode number and title (e.g., " - ", " - ", "_")</p>
+                                </div>
+                                <div class="flex items-center gap-3 p-3 bg-gray-900 rounded-lg border border-gray-700">
+                                    <input type="checkbox" v-model="settings.episodeIncludeTitle" id="episodeIncludeTitle"
+                                           class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-green-600 focus:ring-green-500 focus:ring-2">
+                                    <div class="flex-1">
+                                        <label for="episodeIncludeTitle" class="text-sm text-gray-300 cursor-pointer">
+                                            Include Episode Title
+                                        </label>
+                                        <p class="text-xs text-gray-500 mt-1">Include episode title in filename when available</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="border-t border-gray-700 pt-4">
+                            <h4 class="text-sm font-semibold text-gray-300 mb-3">Concurrency Settings</h4>
+                            <p class="text-xs text-gray-500 mb-3">Control how many chapters and pages download in parallel. Lower values reduce rate limiting but slow downloads.</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                                    <label class="block text-sm text-gray-400 mb-2">Concurrent Chapters</label>
+                                    <input type="number" v-model.number="settings.concurrentChapters" min="1" max="20" 
+                                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                                    <p class="text-xs text-gray-500 mt-1">Default: 6</p>
+                    </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">Concurrent Pages</label>
+                                    <input type="number" v-model.number="settings.concurrentPages" min="1" max="200" 
+                                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+                                    <p class="text-xs text-gray-500 mt-1">Default: 120</p>
+                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- App Settings Tab -->
+                    <div v-if="settingsTab === 'app'" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fa-solid fa-clock mr-2 text-green-400"></i>Auto-Check Interval
+                            </label>
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-3">
+                                    <input type="number" v-model.number="settings.autoCheckInterval" 
+                                           min="1" max="1440" 
+                                           class="w-24 bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-center">
+                                    <span class="text-gray-300">minutes</span>
+                                </div>
+                                <p class="text-xs text-gray-500">
+                                    How often to check for new episodes (1-1440 minutes, max 24 hours). Current: [[ formatAutoCheckInterval(settings.autoCheckInterval) ]]
+                                </p>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fa-solid fa-bug mr-2 text-green-400"></i>Debug Mode
+                            </label>
+                            <div class="flex items-center gap-3 p-3 bg-gray-900 rounded-lg border border-gray-700">
+                                <input type="checkbox" v-model="settings.debugMode" id="debugMode" 
+                                       class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-green-600 focus:ring-green-500 focus:ring-2">
+                                <div class="flex-1">
+                                    <label for="debugMode" class="text-sm text-gray-300 cursor-pointer">
+                                        Enable Debug Logging
+                                    </label>
+                                    <p class="text-xs text-gray-500 mt-1">Adds --debug flag to webtoon-downloader commands for verbose output</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Integrations Tab -->
+                    <div v-if="settingsTab === 'integrations'" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fa-brands fa-discord mr-2 text-indigo-400"></i>Discord Webhook
+                            </label>
+                            <div class="space-y-3">
+                                <div>
+                                    <input type="url" v-model="settings.discordWebhookUrl" 
+                                           placeholder="https://discord.com/api/webhooks/..."
+                                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm">
+                                    <p class="text-xs text-gray-500 mt-1">Discord webhook URL for notifications</p>
+                                </div>
+                                <div class="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
+                                    <p class="text-sm font-medium text-gray-300 mb-3">Notification Events</p>
+                                    <div class="space-y-2">
+                                        <label class="flex items-center gap-3 p-2 hover:bg-gray-800 rounded cursor-pointer">
+                                            <input type="checkbox" v-model="settings.discordNotifyNewEpisode" 
+                                                   class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500 focus:ring-2">
+                                            <div class="flex-1">
+                                                <span class="text-sm text-gray-300">New Episode Found</span>
+                                                <p class="text-xs text-gray-500">Notify when a new episode is detected</p>
+                                            </div>
+                                        </label>
+                                        <label class="flex items-center gap-3 p-2 hover:bg-gray-800 rounded cursor-pointer">
+                                            <input type="checkbox" v-model="settings.discordNotifyDownloadStart" 
+                                                   class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500 focus:ring-2">
+                                            <div class="flex-1">
+                                                <span class="text-sm text-gray-300">Download Started</span>
+                                                <p class="text-xs text-gray-500">Notify when a download begins</p>
+                                            </div>
+                                        </label>
+                                        <label class="flex items-center gap-3 p-2 hover:bg-gray-800 rounded cursor-pointer">
+                                            <input type="checkbox" v-model="settings.discordNotifyDownloadComplete" 
+                                                   class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500 focus:ring-2">
+                                            <div class="flex-1">
+                                                <span class="text-sm text-gray-300">Download Complete</span>
+                                                <p class="text-xs text-gray-500">Notify when a download finishes successfully</p>
+                                            </div>
+                                        </label>
+                                        <label class="flex items-center gap-3 p-2 hover:bg-gray-800 rounded cursor-pointer">
+                                            <input type="checkbox" v-model="settings.discordNotifyDownloadFailed" 
+                                                   class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500 focus:ring-2">
+                                            <div class="flex-1">
+                                                <span class="text-sm text-gray-300">Download Failed</span>
+                                                <p class="text-xs text-gray-500">Notify when a download fails</p>
+                                            </div>
+                                        </label>
+                                        <label class="flex items-center gap-3 p-2 hover:bg-gray-800 rounded cursor-pointer">
+                                            <input type="checkbox" v-model="settings.discordNotifySeriesAdded" 
+                                                   class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-indigo-600 focus:ring-indigo-500 focus:ring-2">
+                                            <div class="flex-1">
+                                                <span class="text-sm text-gray-300">Series Added</span>
+                                                <p class="text-xs text-gray-500">Notify when a new series is added</p>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="p-6 border-t border-gray-700 bg-gray-800/50 flex justify-between items-center">
+                    <button @click="confirmFullReset" class="text-red-400 hover:text-red-300 text-sm font-medium">
+                        <i class="fa-solid fa-trash mr-2"></i>Reset App
+                    </button>
+                    <div class="flex gap-3">
+                        <button @click="showSettings = false" class="px-4 py-2 text-gray-300 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
+                            Cancel
+                        </button>
+                        <button @click="saveGlobalSettings" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg font-medium transition-colors shadow-lg">
+                            Save Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. SUB SETTINGS MODAL -->
+        <div v-if="initialized && showSubSettingsModal" @click.self="showSubSettingsModal = false" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+            <div class="bg-gray-800 p-6 rounded-lg w-full max-w-lg border border-gray-600">
+                <h3 class="text-xl font-bold mb-2 text-white">Series Settings</h3>
+                <p class="text-sm text-green-400 mb-4">[[ subSettingsSeries?.title ]]</p>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-400">Override Format</label>
+                        <select v-model="subSettings.formatOverride" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white mt-1">
+                            <option value="">Use Global Default</option>
+                            <option value="images">Images</option>
+                            <option value="cbz">CBZ</option>
+                            <option value="pdf">PDF</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2 mt-4">
+                        <input type="checkbox" v-model="subSettings.autoDownloadLatest" id="autoDl" class="rounded bg-gray-900 border-gray-700 text-green-600">
+                        <label for="autoDl" class="text-gray-300 text-sm">Auto-download new episodes</label>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-between">
+                    <button @click="deleteCurrentSubscription" class="text-red-500 hover:text-red-400 text-sm border border-red-900/50 bg-red-900/10 px-3 py-1 rounded">Delete Series</button>
+                    <div class="flex gap-2">
+                        <button @click="showSubSettingsModal = false" class="text-gray-400 hover:text-white px-3">Cancel</button>
+                        <button @click="saveSubSettings" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. ABOUT MODAL -->
+        <div v-if="showAboutModal" @click.self="showAboutModal = false" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+            <div class="bg-gray-800 rounded-xl w-full max-w-lg border border-gray-600 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-green-600 to-emerald-600 p-4 sm:p-6 text-center flex-shrink-0">
+                    <div class="flex items-center justify-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+                        <i class="fa-solid fa-book-open text-white text-2xl sm:text-3xl"></i>
+                        <h3 class="text-xl sm:text-2xl font-bold text-white">Webtoon Manager</h3>
+                    </div>
+                    <p class="text-green-100 text-xs sm:text-sm">Version [[ appVersion ]]</p>
+                </div>
+                
+                <!-- Content - Scrollable -->
+                <div class="p-4 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+                    <div>
+                        <p class="text-gray-300 text-sm leading-relaxed">
+                            A modern, dockerized web application for managing and downloading Webtoons with an intuitive interface.
+                        </p>
+                    </div>
+                    
+                    <!-- Features -->
+                    <div class="border-t border-gray-700 pt-3">
+                        <h4 class="text-green-400 font-semibold mb-2 text-xs sm:text-sm uppercase tracking-wide">Features</h4>
+                        <ul class="space-y-1.5 text-xs sm:text-sm text-gray-400">
+                            <li class="flex items-start gap-2">
+                                <i class="fa-solid fa-check text-green-500 mt-0.5"></i>
+                                <span>Subscribe to multiple Webtoon series</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="fa-solid fa-check text-green-500 mt-0.5"></i>
+                                <span>Auto-download new episodes</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="fa-solid fa-check text-green-500 mt-0.5"></i>
+                                <span>Multiple format support (Images, CBZ, PDF)</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="fa-solid fa-check text-green-500 mt-0.5"></i>
+                                <span>Customizable folder structures</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i class="fa-solid fa-check text-green-500 mt-0.5"></i>
+                                <span>Per-series settings and overrides</span>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <!-- Notice -->
+                    <div class="border-t border-gray-700 pt-3">
+                        <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-3">
+                            <div class="flex items-start gap-2">
+                                <i class="fa-solid fa-triangle-exclamation text-yellow-400 mt-0.5 text-sm flex-shrink-0"></i>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-yellow-300 font-semibold text-xs sm:text-sm mb-1">Mature Series Support</p>
+                                    <p class="text-yellow-200/80 text-xs sm:text-sm leading-relaxed">
+                                        Mature series support is currently 50/50. A GitHub PR has been made for full support.
+                                    </p>
+                                    <a href="https://github.com/Zehina/webtoon-downloader/pull/102" target="_blank" 
+                                       class="text-yellow-400 hover:text-yellow-300 underline text-xs sm:text-sm mt-1 inline-block">
+                                        <i class="fa-brands fa-github mr-1"></i>View PR #102
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Credits -->
+                    <div class="border-t border-gray-700 pt-3">
+                        <h4 class="text-green-400 font-semibold mb-2 text-xs sm:text-sm uppercase tracking-wide">Credits & Acknowledgments</h4>
+                        <div class="space-y-2 text-xs sm:text-sm">
+                            <div class="bg-gray-900/50 rounded-lg p-2 sm:p-3 border border-gray-700">
+                                <p class="text-gray-300 mb-1 text-xs sm:text-sm">
+                                    <i class="fa-solid fa-terminal text-green-400 mr-2"></i>
+                                    <strong class="text-white">webtoon-downloader</strong>
+                                </p>
+                                <p class="text-gray-400 text-xs ml-5 sm:ml-6">
+                                    This application uses the webtoon-downloader CLI tool for downloading episodes.
+                                    <br>
+                                    <a href="https://pypi.org/project/webtoon-downloader/" target="_blank" class="text-green-400 hover:text-green-300 underline">View on PyPI</a>
+                                    <br>
+                                    <a href="https://github.com/Zehina/webtoon-downloader" target="_blank" class="text-green-400 hover:text-green-300 underline">View on GitHub</a>
+                                </p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-2 sm:p-3 border border-gray-700">
+                                <p class="text-gray-300 mb-1 text-xs sm:text-sm">
+                                    <i class="fa-brands fa-github text-green-400 mr-2"></i>
+                                    <strong class="text-white">Contributor</strong>
+                                </p>
+                                <p class="text-gray-400 text-xs ml-5 sm:ml-6">
+                                    <a href="https://github.com/AKASGaming" target="_blank" class="text-green-400 hover:text-green-300 underline">AKASGaming</a>
+                                </p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-2 sm:p-3 border border-gray-700">
+                                <p class="text-gray-300 text-xs sm:text-sm">
+                                    <i class="fa-solid fa-code text-green-400 mr-2"></i>
+                                    Built with <strong class="text-white">Flask</strong>, <strong class="text-white">Vue.js</strong>, and <strong class="text-white">Tailwind CSS</strong>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+                
+                <!-- Footer -->
+                <div class="bg-gray-900/50 px-4 sm:px-6 py-3 border-t border-gray-700 flex justify-end flex-shrink-0">
+                    <button @click="showAboutModal = false" class="bg-green-600 hover:bg-green-500 text-white px-4 sm:px-6 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors w-full sm:w-auto">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. CONFIRM MODALS (Reset/Delete) -->
+        <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 text-center">
+            <div class="bg-gray-900 p-6 rounded border border-red-600 max-w-sm">
+                <h3 class="text-red-500 font-bold text-lg mb-2">Confirm Delete</h3>
+                <p class="text-gray-300 mb-4">Are you sure you want to delete <strong>[[ seriesToDelete?.title ]]</strong> and all its files?</p>
+                <div class="flex justify-center gap-4">
+                    <button @click="showDeleteConfirm = false" class="text-gray-400 hover:text-white">Cancel</button>
+                    <button @click="executeDeleteSeries" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">Delete Forever</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showResetConfirmOne" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 text-center">
+            <div class="bg-gray-900 p-6 rounded border border-red-600 max-w-sm">
+                <h3 class="text-red-500 font-bold text-lg mb-2">⚠ Factory Reset</h3>
+                <p class="text-gray-300 mb-4">This will wipe ALL database entries and settings. Files will be deleted.</p>
+                <div class="flex justify-center gap-4">
+                    <button @click="showResetConfirmOne = false" class="text-gray-400 hover:text-white">Cancel</button>
+                    <button @click="showResetConfirmOne = false; showResetConfirmTwo = true" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">Continue</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showResetConfirmTwo" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 text-center">
+            <div class="bg-red-900 p-6 rounded border border-red-500 max-w-sm">
+                <h3 class="text-white font-bold text-lg mb-2">FINAL WARNING</h3>
+                <p class="text-red-200 mb-4">This action cannot be undone.</p>
+                <button @click="executeFullReset" class="bg-black hover:bg-gray-900 text-white border border-red-500 px-6 py-2 rounded w-full">I understand, delete everything</button>
+                <button @click="showResetConfirmTwo = false" class="mt-3 text-red-200 hover:text-white underline text-sm">Cancel</button>
+            </div>
+        </div>
+
+        <!-- TOAST -->
+        <div v-if="showToast" :class="['fixed bottom-4 right-4 z-[100] bg-gray-800 border border-green-500 text-white px-4 py-3 rounded shadow-lg flex items-center gap-2 transition-all duration-500', toastClosing ? 'opacity-0 translate-y-2' : 'opacity-100']">
+            <i class="fa-solid fa-check-circle text-green-400"></i> [[ toastMessage ]]
+        </div>
+
+    </div>
+    {% endraw %}
+    <!-- END: JINJA RAW BLOCK -->
+    
+    <script>
+        const { createApp } = Vue;
+        const app = createApp({
+            data() {
+              return {
+                appVersion: 'v0.9.1',
+                initialized: false,
+                currentView: 'subscriptions',
+                showAboutModal: false,
+                sidebarOpen: false,
+                loading: false,
+                processing: false,
+                processingTimeoutId: null,
+                processingHintVisible: false,
+                processingMessage: 'Processing',
+                pendingSubUrls: {},
+                progressByUrl: {},
+                progressTimers: {},
+                lastAutoCheck: null,
+                nextAutoCheck: null,
+                eventSource: null,
+                countdownTimer: null,
+                currentTime: Date.now(), // Reactive time for countdown
+                // Modals
+                showAddModal: false,
+                showSettings: false,
+                showDownloadOptionsModal: false,
+                showSubSettingsModal: false,
+                showToast: false,
+                toastMessage: '',
+                toastTimeoutId: null,
+                toastFadeTimeoutId: null,
+                toastClosing: false,
+                showDeleteConfirm: false,
+                seriesToDelete: null,
+                showResetConfirmOne: false,
+                showResetConfirmTwo: false,
+                // Input/Active States
+                newUrl: '',
+                errorMessage: '',
+                activeSeries: null,
+                modalSeries: null,
+                subSettingsSeries: null,
+                // Data Stores
+                subscriptions: [],
+                episodes: [],
+                modalEpisodes: null,
+                logs: [],
+                // Pagination
+                currentPage: 1,
+                totalPages: 1,
+                // Episode page filters
+                episodeSearchQuery: '',
+                episodeFilter: 'all',
+                // Add subscription modal
+                addSubscriptionAutoDownload: false,
+                addSubscriptionDownloadAll: false,
+                settings: {
+                  format: 'images',
+                  pathTemplate: 'author_series_flat',
+                  episodeNumberFormat: 'number',
+                  episodeNumberPadding: 0,
+                  episodeSeparator: ' - ',
+                  episodeIncludeTitle: true,
+                  concurrentChapters: 6,
+                  concurrentPages: 120,
+                  debugMode: false,
+                  autoCheckInterval: 5,
+                  discordWebhookUrl: '',
+                  discordNotifyNewEpisode: true,
+                  discordNotifyDownloadStart: false,
+                  discordNotifyDownloadComplete: true,
+                  discordNotifyDownloadFailed: true,
+                  discordNotifySeriesAdded: true
+                },
+                settingsTab: 'global',
+                perSeriesSettings: {},
+                subSettings: {
+                  formatOverride: '',
+                  autoDownloadLatest: false,
+                  separateChapters: false,
+                  pathTemplateOverride: '',
+                  scheduleDay: null,
+                  scheduleTime: ''
+                },
+                // Jobs & Auto-download
+                jobs: [],
+                jobsAutoRefreshTimer: null,
+                autoDownloadTimer: null,
+                // Toolbar state
+                toolbarExpanded: false,
+                searchQuery: '',
+                filterBy: 'all',
+                sortBy: 'title-asc',
+                // Subscription fetch throttling
+                fetchSubscriptionsTimer: null,
+                isFetchingSubscriptions: false,
+                pendingFetchSubscriptions: false,
+                // Single card update queue
+                cardUpdateQueue: [],
+                isUpdatingCard: false,
+              }
+            },
+            methods: {
+                async fetchSubscriptions(immediate = false) {
+                    // Debounce rapid calls - batch them together
+                    if (!immediate) {
+                        // If already fetching, mark that we need another fetch after this one
+                        if (this.isFetchingSubscriptions) {
+                            this.pendingFetchSubscriptions = true;
+                            return;
+                        }
+                        
+                        // Clear any pending timer
+                        if (this.fetchSubscriptionsTimer) {
+                            clearTimeout(this.fetchSubscriptionsTimer);
+                        }
+                        
+                        // Debounce: wait 300ms to batch multiple rapid calls
+                        return new Promise((resolve) => {
+                            this.fetchSubscriptionsTimer = setTimeout(async () => {
+                                this.fetchSubscriptionsTimer = null;
+                                await this.fetchSubscriptions(true);
+                                resolve();
+                            }, 300);
+                        });
+                    }
+                    
+                    // Prevent concurrent fetches
+                    if (this.isFetchingSubscriptions) {
+                        this.pendingFetchSubscriptions = true;
+                        return;
+                    }
+                    
+                    this.isFetchingSubscriptions = true;
+                    this.loading = true;
+                    
+                    try {
+                        const res = await fetch('/api/subscriptions');
+                        if (!res.ok) throw new Error('Failed to fetch subscriptions');
+                        const data = await res.json();
+                        const serverSubs = data.subscriptions || data;
+                        
+                        // Preserve placeholder cards that are still processing
+                        const processingPlaceholders = this.subscriptions.filter(sub => {
+                            if (!sub.url) return false;
+                            const url = sub.url;
+                            // Keep if it's a placeholder (id starts with 'pending-')
+                            const isPlaceholder = sub.id && sub.id.toString().startsWith('pending-');
+                            if (!isPlaceholder) return false;
+                            
+                            // Keep if it has progress data OR has an active progress timer
+                            // The timer check ensures placeholders stay visible immediately after creation
+                            const hasProgress = this.progressByUrl && this.progressByUrl[url] && Object.keys(this.progressByUrl[url]).length > 0;
+                            const hasActiveTimer = this.progressTimers && this.progressTimers[url];
+                            return hasProgress || hasActiveTimer;
+                        });
+                        
+                        // Create a map of server subscriptions by URL
+                        const serverSubsByUrl = new Map();
+                        serverSubs.forEach(sub => {
+                            if (sub.url) {
+                                serverSubsByUrl.set(sub.url, sub);
+                            }
+                        });
+                        
+                        // Merge subscriptions: use server data when available, but preserve placeholders that are still processing
+                        const mergedSubs = [];
+                        const processedUrls = new Set();
+                        
+                        // First, add all server subscriptions, but mark them as processing if needed
+                        serverSubs.forEach(serverSub => {
+                            if (serverSub.url) {
+                                processedUrls.add(serverSub.url);
+                                const placeholder = processingPlaceholders.find(p => p.url === serverSub.url);
+                                
+                                // If server already marks it as processing, use that (highest priority)
+                                if (serverSub.is_processing) {
+                                    mergedSubs.push(serverSub);
+                                } else if (placeholder) {
+                                    // We have a placeholder - check if it's actively processing
+                                    const hasProgress = this.progressByUrl && this.progressByUrl[serverSub.url] && Object.keys(this.progressByUrl[serverSub.url]).length > 0;
+                                    const hasActiveTimer = this.progressTimers && this.progressTimers[serverSub.url];
+                                    
+                                    // If placeholder has timer or progress, mark as processing
+                                    // This ensures the card stays visible even if server hasn't marked it as processing yet
+                                    if (hasProgress || hasActiveTimer) {
+                                        // Merge: use server data but keep processing state
+                                        mergedSubs.push({
+                                            ...serverSub,
+                                            is_processing: true
+                                        });
+                                    } else if (this.processing) {
+                                        // Placeholder exists but no active timer/progress - might have just been created
+                                        // If we're still in the process of adding, preserve the placeholder state
+                                        mergedSubs.push({
+                                            ...serverSub,
+                                            is_processing: true
+                                        });
+                                    } else {
+                                        // No active processing, use server data as-is
+                                        mergedSubs.push(serverSub);
+                                    }
+                                } else {
+                                    // No placeholder, use server data as-is
+                                    mergedSubs.push(serverSub);
+                                }
+                            } else {
+                                mergedSubs.push(serverSub);
+                            }
+                        });
+                        
+                        // Then add placeholders that don't have a server subscription yet
+                        processingPlaceholders.forEach(placeholder => {
+                            if (placeholder.url && !processedUrls.has(placeholder.url)) {
+                                mergedSubs.push(placeholder);
+                            }
+                        });
+                        
+                        this.subscriptions = mergedSubs;
+                        
+                        // Start polling only for subscriptions that are actively caching
+                        // (not just "Starting episode scrape" - those will be updated when they start caching)
+                        this.subscriptions.forEach((sub) => {
+                            if (sub.url) {
+                                // Only poll if actively caching (has progress data)
+                                const isProcessing = sub.is_processing === true;
+                                const hasProgress = this.progressByUrl && this.progressByUrl[sub.url] && 
+                                    this.progressByUrl[sub.url].status === 'caching' &&
+                                    (this.progressByUrl[sub.url].progress !== undefined || 
+                                     this.progressByUrl[sub.url].current_episode !== undefined);
+                                const hasActiveTimer = this.progressTimers && this.progressTimers[sub.url];
+                                
+                                // Only start polling if actively caching (not just "Starting episode scrape")
+                                if (hasProgress || hasActiveTimer) {
+                                    this.startProgressPolling(sub.url);
+                                } else if (isProcessing && sub.processing_progress !== undefined) {
+                                    // If server says it's processing with progress, start polling
+                                    this.startProgressPolling(sub.url);
+                                }
+                            }
+                        });
+                    } catch (err) {
+                        console.error(err);
+                    } finally {
+                        this.loading = false;
+                        this.isFetchingSubscriptions = false;
+                        
+                        // If another fetch was requested while we were fetching, do it now
+                        if (this.pendingFetchSubscriptions) {
+                            this.pendingFetchSubscriptions = false;
+                            // Use a small delay to avoid immediate re-fetch
+                            setTimeout(() => {
+                                this.fetchSubscriptions(true);
+                            }, 100);
+                        }
+                    }
+                },
+                isSeriesProcessing(sub) {
+                    if (!sub) return false;
+                    const url = sub.url;
+                    if (sub.is_processing) return true; // Server flag
+                    const prog = this.progressByUrl ? this.progressByUrl[url] : null;
+                    return prog && Object.keys(prog).length > 0;
+                },
+                startProgressPolling(url) {
+                    if (!url) return;
+                    if (!this.progressTimers) this.progressTimers = {};
+                    if (!this.progressByUrl) this.progressByUrl = {};
+                    if (this.progressTimers[url]) return;
+                
+                    // Track last known server status to detect changes
+                    let lastServerSubtitle = null;
+                    let lastServerProgress = null;
+                    let subscriptionFound = false;
+                
+                    this.progressTimers[url] = setInterval(async () => {
+                        try {
+                            // Check server-side subscription status first (this has the processing status)
+                            let serverSub = null;
+                            try {
+                                const subRes = await fetch('/api/subscription_by_url?url=' + encodeURIComponent(url));
+                                if (subRes.ok) {
+                                    serverSub = await subRes.json();
+                                    subscriptionFound = true;
+                                    
+                                    // Update the card whenever server status changes
+                                    const currentSubtitle = serverSub.processing_subtitle || null;
+                                    const currentProgress = serverSub.processing_progress !== undefined ? 
+                                        serverSub.processing_progress : null;
+                                    
+                                    // Update if subtitle or progress changed
+                                    if (currentSubtitle !== lastServerSubtitle || currentProgress !== lastServerProgress) {
+                                        this.updateSingleCard(url);
+                                        lastServerSubtitle = currentSubtitle;
+                                        lastServerProgress = currentProgress;
+                                    }
+                                    
+                                    // Stop polling if not processing
+                                    if (!serverSub.is_processing) {
+                                        // Check if progress is also finished
+                                        const progressRes = await fetch('/api/subscription_progress?url=' + encodeURIComponent(url));
+                                        if (progressRes.ok) {
+                                            const progressData = await progressRes.json();
+                                            if (!progressData || Object.keys(progressData).length === 0) {
+                                                // Clear progress and update card one last time
+                                                if (this.progressByUrl) {
+                                delete this.progressByUrl[url];
+                                                }
+                                                // Update card to reflect final state
+                                                this.updateSingleCard(url);
+                                this.stopProgressPolling(url);
+                                return;
+                            }
+                                        } else {
+                                            // No progress data or error - clear and stop
+                                            if (this.progressByUrl) {
+                                                delete this.progressByUrl[url];
+                                            }
+                                            this.updateSingleCard(url);
+                                            this.stopProgressPolling(url);
+                                            return;
+                                        }
+                                    }
+                                } else if (subRes.status === 404) {
+                                    // Subscription doesn't exist yet - don't update card, but keep polling
+                                    // Will retry next interval
+                                    return;
+                                }
+                            } catch (e) {
+                                // Ignore errors, will retry next interval
+                            }
+                            
+                            // Also check progress data for detailed caching info
+                            if (subscriptionFound) {
+                                try {
+                                    const progressRes = await fetch('/api/subscription_progress?url=' + encodeURIComponent(url));
+                                    if (progressRes.ok) {
+                                        const progressData = await progressRes.json();
+                                        
+                                        if (progressData && Object.keys(progressData).length > 0) {
+                                            // Update progress data
+                                            this.progressByUrl[url] = progressData;
+                                        } else {
+                                            // Progress finished
+                                            delete this.progressByUrl[url];
+                                        }
+                                    }
+                                } catch (e) {
+                                    // Ignore errors
+                                }
+                            }
+                        } catch (e) {
+                            // Ignore errors, will retry next interval
+                        }
+                    }, 1000);
+                },
+                stopProgressPolling(url) {
+                    if (!url || !this.progressTimers) return;
+                    clearInterval(this.progressTimers[url]);
+                    delete this.progressTimers[url];
+                },
+                queueCardUpdate(url) {
+                    // Add to queue if not already queued
+                    if (!this.cardUpdateQueue.includes(url)) {
+                        this.cardUpdateQueue.push(url);
+                    }
+                    // Process queue if not already processing
+                    if (!this.isUpdatingCard) {
+                        this.processCardUpdateQueue();
+                    }
+                },
+                async processCardUpdateQueue() {
+                    if (this.isUpdatingCard || this.cardUpdateQueue.length === 0) {
+                        return;
+                    }
+                    
+                    this.isUpdatingCard = true;
+                    
+                    // Process one card at a time with a small delay between updates
+                    while (this.cardUpdateQueue.length > 0) {
+                        const url = this.cardUpdateQueue.shift();
+                        await this.updateSingleCard(url);
+                        // Small delay between card updates to prevent flashing
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                    }
+                    
+                    this.isUpdatingCard = false;
+                },
+                async updateSingleCard(url) {
+                    try {
+                        // Fetch only this specific subscription by URL
+                        const res = await fetch('/api/subscription_by_url?url=' + encodeURIComponent(url));
+                        if (!res.ok) {
+                            // If not found (404), might be a placeholder that hasn't been created yet
+                            // This is normal during initial creation, don't log as error
+                            return;
+                        }
+                        const serverSub = await res.json();
+                        
+                        // Find the existing card in our list
+                        const cardIndex = this.subscriptions.findIndex(sub => {
+                            // Match by URL, or by placeholder ID if it's a placeholder
+                            return sub.url === url || (sub.id && sub.id.toString().startsWith('pending-') && sub.url === url);
+                        });
+                        
+                        if (cardIndex !== -1) {
+                            // Update the card in place - merge with existing to preserve any client-side state
+                            // Use Object.assign to trigger Vue reactivity without replacing the entire object
+                            const existingCard = this.subscriptions[cardIndex];
+                            Object.assign(existingCard, serverSub);
+                            
+                            // Preserve progress data from progressByUrl if available
+                            if (this.progressByUrl && this.progressByUrl[url]) {
+                                // Progress data is already in progressByUrl, getProcessingProgress will use it
+                            }
+                        } else {
+                            // Card not found - might be a new subscription, do a minimal refresh
+                            // Only refresh if we're not already fetching
+                            if (!this.isFetchingSubscriptions && !this.pendingFetchSubscriptions) {
+                                this.pendingFetchSubscriptions = true;
+                                setTimeout(() => {
+                                    this.pendingFetchSubscriptions = false;
+                                    this.fetchSubscriptions(false);
+                                }, 1000);
+                            }
+                        }
+                    } catch (err) {
+                        // Silently ignore errors - subscription might not exist yet
+                        // Don't log to avoid console spam
+                    }
+                },
+                addSubscription() {
+                    const raw = (this.newUrl || '').trim();
+                    if (!raw) {
+                        this.errorMessage = 'Please enter a URL.';
+                        return;
+                    }
+                    const urlList = raw.split(/[\s,]+/).map(s => s.trim()).filter(s => s.length > 0);
+                    
+                    this.processing = true;
+                    this.errorMessage = '';
+                    this.processingMessage = 'Processing...';
+                    
+                    const run = async () => {
+                        try {
+                            const enableAutoDownload = this.addSubscriptionAutoDownload;
+                            const downloadAll = this.addSubscriptionDownloadAll;
+                            for (let i = 0; i < urlList.length; i++) {
+                                await this.processSubscriptionUrl(urlList[i], enableAutoDownload, downloadAll);
+                            }
+                            this.newUrl = '';
+                            this.addSubscriptionAutoDownload = false; // Reset checkbox
+                            this.addSubscriptionDownloadAll = false; // Reset checkbox
+                            this.showAddModal = false; // Close on success
+                        } catch (err) {
+                            this.errorMessage = err.message;
+                        } finally {
+                            this.processing = false;
+                        }
+                    };
+                    run();
+                },
+                async processSubscriptionUrl(url, enableAutoDownload = false, downloadAll = false) {
+                    // Create placeholder card
+                    const placeholderId = 'pending-' + Math.random();
+                    this.subscriptions.unshift({
+                        id: placeholderId,
+                        url: url,
+                        title: 'Processing...',
+                        artist: '',
+                        thumbnail: '',
+                        is_processing: true
+                    });
+                    
+                    // Start polling after a short delay to allow subscription to be created
+                    // This prevents 404 errors when trying to update the card immediately
+                    setTimeout(() => {
+                    this.startProgressPolling(url);
+                    }, 500);
+
+                    try {
+                        const res = await fetch('/api/subscriptions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                url: url,
+                                auto_download_latest: enableAutoDownload,
+                                download_all_after_cache: downloadAll
+                            })
+                        });
+                        
+                        if (!res.ok) {
+                            const err = await res.json();
+                            // If duplicated, just remove placeholder and warn
+                            if (res.status === 409) {
+                                this.showToastMessage('Series already subscribed.');
+                                this.subscriptions = this.subscriptions.filter(s => s.id !== placeholderId);
+                                this.stopProgressPolling(url);
+                                return;
+                            }
+                            throw new Error(err.message || 'Failed to add');
+                        }
+                        
+                        // Don't immediately fetch - let progress polling handle updates
+                        // This prevents spam when adding multiple series
+                        // The progress polling will trigger a refresh when needed
+                        const message = enableAutoDownload ? 
+                            'Series added with auto-download enabled.' : 
+                            'Series added successfully.';
+                        this.showToastMessage(message);
+                    } catch(e) {
+                        // Keep error visible in modal
+                        this.subscriptions = this.subscriptions.filter(s => s.id !== placeholderId);
+                        this.stopProgressPolling(url);
+                        throw e; 
+                    }
+                },
+                // ... REST OF THE METHODS ...
+                async deleteCurrentSubscription() {
+                  const id = this.subSettings.id;
+                  if (!confirm(`Delete this series?`)) return;
+                  await fetch(`/api/subscription/${id}`, { method: 'DELETE' });
+                  this.subscriptions = this.subscriptions.filter(s => s.id !== id);
+                  this.closeSubSettings();
+                  this.showToastMessage('Series removed.');
+                },
+                confirmDeleteSeries(series) {
+                  this.seriesToDelete = series;
+                  this.showDeleteConfirm = true;
+                },
+                async executeDeleteSeries() {
+                  if (!this.seriesToDelete) return;
+                  await fetch(`/api/subscription/${this.seriesToDelete.id}`, { method: 'DELETE' });
+                  this.showDeleteConfirm = false;
+                  this.seriesToDelete = null;
+                  this.currentView = 'subscriptions';
+                  await this.fetchSubscriptions();
+                  this.showToastMessage('Series deleted.');
+                },
+                processingTitle(sub) {
+                    return sub.processing_title || sub.title || 'Processing...';
+                },
+                processingSubtitle(sub) {
+                    // Check server-side subtitle first
+                    if (sub.processing_subtitle) {
+                        return sub.processing_subtitle;
+                    }
+                    // Fallback to client-side progress
+                    const info = this.progressByUrl?.[sub.url];
+                    if (info) {
+                        if (info.status === 'caching') {
+                            if (info.current_episode && info.total_episodes) {
+                                return `Caching Episode ${info.current_episode} of ${info.total_episodes}`;
+                            } else if (info.episode) {
+                                return `Caching Episode ${info.episode}${info.page ? ` (Page ${info.page})` : ''}`;
+                            } else if (info.page) {
+                                return `Scanning page ${info.page}`;
+                            }
+                        }
+                        if (info.subtitle) {
+                            return info.subtitle;
+                        }
+                    }
+                    return 'Initializing...';
+                },
+                getProcessingProgress(sub) {
+                    // Check server-side progress first (from PROCESSES dict)
+                    if (sub.processing_progress !== undefined && sub.processing_progress !== null) {
+                        return sub.processing_progress;
+                    }
+                    // Fallback to client-side progress (from EPISODE_PROGRESS)
+                    const info = this.progressByUrl?.[sub.url];
+                    if (info) {
+                        // Use progress directly if available
+                        if (info.progress !== undefined && info.progress !== null) {
+                            return info.progress;
+                        }
+                        // Otherwise calculate from current_episode and total_episodes
+                        if (info.current_episode && info.total_episodes) {
+                        // Progress increases as we process more episodes (go from high to low episode numbers)
+                        // Same calculation as backend: (total - current + 1) / total
+                        return Math.max(0, Math.min(1, (info.total_episodes - info.current_episode + 1) / info.total_episodes));
+                        }
+                    }
+                    return null;
+                },
+                // --- Download & View Methods ---
+                async openDownloadOptions(sub) {
+                    this.modalSeries = sub;
+                    this.modalEpisodes = null;
+                    this.showDownloadOptionsModal = true;
+                    // Load per-series settings if not already loaded
+                    if (!this.perSeriesSettings[sub.id]) {
+                        await this.loadSeriesSettings(sub.id);
+                    }
+                    await this.fetchLatestEpisodes(sub.id, 5);
+                },
+                viewAllEpisodes(sub, scrollToEpNum = null) {
+                    this.activeSeries = sub;
+                    this.currentView = 'episodes';
+                    this.currentPage = 1;
+                    this.episodeSearchQuery = '';
+                    this.episodeFilter = 'all';
+                    this.showDownloadOptionsModal = false;
+                    this.fetchEpisodes(sub.id, 1).then(() => {
+                        if (scrollToEpNum) {
+                            this.scrollToEpisode(scrollToEpNum);
+                        }
+                    });
+                },
+                async fetchEpisodes(subId, page) {
+                    const res = await fetch(`/api/subscription/${subId}/episodes?page=${page}&limit=18`);
+                    const data = await res.json();
+                    this.episodes = data.episodes;
+                    this.totalPages = data.pages;
+                    this.currentPage = data.page;
+                },
+                async fetchLatestEpisodes(subId, limit = 5) {
+                    try {
+                        const res = await fetch(`/api/subscription/${subId}/episodes?limit=${limit}`);
+                        const data = await res.json();
+                        this.modalEpisodes = data.episodes || [];
+                    } catch (error) {
+                        this.modalEpisodes = [];
+                    }
+                },
+                changePage(p) {
+                    if(p < 1 || p > this.totalPages) return;
+                    this.fetchEpisodes(this.activeSeries.id, p);
+                    // Scroll to top when changing pages
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                },
+                getVisiblePages() {
+                    const pages = [];
+                    const maxVisible = 5;
+                    let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+                    let end = Math.min(this.totalPages, start + maxVisible - 1);
+                    
+                    if (end - start < maxVisible - 1) {
+                        start = Math.max(1, end - maxVisible + 1);
+                    }
+                    
+                    for (let i = start; i <= end; i++) {
+                        pages.push(i);
+                    }
+                    return pages;
+                },
+                formatEpisodeDate(dateStr) {
+                    if (!dateStr) return '';
+                    try {
+                        const date = new Date(dateStr);
+                        const now = new Date();
+                        const diffTime = Math.abs(now - date);
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        
+                        if (diffDays === 0) return 'Today';
+                        if (diffDays === 1) return 'Yesterday';
+                        if (diffDays < 7) return `${diffDays}d ago`;
+                        if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+                        if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+                        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                    } catch (e) {
+                        return dateStr;
+                    }
+                },
+                formatEpisodeDateTooltip(dateStr) {
+                    if (!dateStr) return '';
+                    try {
+                        const date = new Date(dateStr);
+                        // Format as M/D/YY (e.g., "2/2/25")
+                        const month = date.getMonth() + 1;
+                        const day = date.getDate();
+                        const year = date.getFullYear().toString().slice(-2);
+                        return `${month}/${day}/${year}`;
+                    } catch (e) {
+                        return dateStr;
+                    }
+                },
+                downloadEpisode(ep, series = null) {
+                    const s = series || this.activeSeries || this.modalSeries;
+                    this.sendDownloadRequest(s.url, s.id, { start: ep.ep_num, end: ep.ep_num });
+                    this.showToastMessage(`Downloading Episode ${ep.ep_num}`);
+                },
+                downloadSeries(series) {
+                    this.sendDownloadRequest(series.url, series.id, {});
+                    this.showToastMessage(`Downloading all episodes for ${series.title}`);
+                },
+                async sendDownloadRequest(url, subId, options) {
+                    // Get format and path_template - check per-series settings first, then global
+                    let format = this.settings.format;
+                    let path_template = this.settings.pathTemplate;
+                    
+                    if (subId && this.perSeriesSettings[subId]) {
+                        if (this.perSeriesSettings[subId].formatOverride) {
+                            format = this.perSeriesSettings[subId].formatOverride;
+                        }
+                        if (this.perSeriesSettings[subId].pathTemplateOverride) {
+                            path_template = this.perSeriesSettings[subId].pathTemplateOverride;
+                    }
+                    }
+                    
+                    const payload = { 
+                        url, 
+                        subscription_id: subId, 
+                        ...options, 
+                        format: format,
+                        path_template: path_template
+                    };
+                    
+                    await fetch('/api/download', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                },
+                scrollToEpisode(epNum) {
+                    // Find the episode in the current episodes list and scroll to it
+                    this.$nextTick(() => {
+                        // Wait a bit for DOM to update
+                        setTimeout(() => {
+                            const episodeCard = document.querySelector(`[data-episode-num="${epNum}"]`);
+                            if (episodeCard) {
+                                episodeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                // Highlight it briefly
+                                episodeCard.classList.add('ring-2', 'ring-green-500', 'ring-offset-2', 'ring-offset-gray-900');
+                                setTimeout(() => {
+                                    episodeCard.classList.remove('ring-2', 'ring-green-500', 'ring-offset-2', 'ring-offset-gray-900');
+                                }, 3000);
+                            }
+                        }, 300);
+                    });
+                },
+                async openSubSettings(sub) {
+                    this.subSettingsSeries = sub;
+                    if (!this.perSeriesSettings[sub.id]) {
+                        await this.loadSeriesSettings(sub.id);
+                    }
+                    const existing = this.perSeriesSettings[sub.id] || {};
+                    this.subSettings = { 
+                        formatOverride: existing.formatOverride || '',
+                        autoDownloadLatest: existing.autoDownloadLatest || false,
+                        pathTemplateOverride: existing.pathTemplateOverride || '',
+                        scheduleDay: existing.scheduleDay || null,
+                        scheduleTime: existing.scheduleTime || '',
+                        id: sub.id, 
+                        title: sub.title 
+                    };
+                    this.showSubSettingsModal = true;
+                },
+                closeSubSettings() { this.showSubSettingsModal = false; },
+                async saveSubSettings() {
+                    const subId = this.subSettingsSeries.id;
+                    if (!subId) {
+                        this.showToastMessage("Error: No series selected.");
+                        return;
+                    }
+                    const payload = { ...this.subSettings };
+                    delete payload.id; delete payload.title;
+                    
+                    try {
+                        const res = await fetch(`/api/series_settings/${subId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            this.perSeriesSettings[subId] = payload;
+                            this.showSubSettingsModal = false;
+                            this.showToastMessage("Settings saved.");
+                        } else {
+                            const error = await res.json().catch(() => ({ message: 'Failed to save settings' }));
+                            this.showToastMessage(`Error: ${error.message || 'Failed to save settings'}`);
+                        }
+                    } catch (error) {
+                        console.error('Error saving settings:', error);
+                        this.showToastMessage("Error: Failed to save settings.");
+                    }
+                },
+                openGlobalSettings() { this.showSettings = true; },
+                openAbout() { this.showAboutModal = true; },
+                closeGlobalSettings() { this.showSettings = false; },
+                async saveGlobalSettings() {
+                    await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            format: this.settings.format,
+                            path_template: this.settings.pathTemplate,
+                            concurrent_chapters: this.settings.concurrentChapters,
+                            concurrent_pages: this.settings.concurrentPages,
+                            debug_mode: this.settings.debugMode,
+                            auto_check_interval: this.settings.autoCheckInterval,
+                            discord_webhook_url: this.settings.discordWebhookUrl,
+                            discord_notify_new_episode: this.settings.discordNotifyNewEpisode,
+                            discord_notify_download_start: this.settings.discordNotifyDownloadStart,
+                            discord_notify_download_complete: this.settings.discordNotifyDownloadComplete,
+                            discord_notify_download_failed: this.settings.discordNotifyDownloadFailed,
+                            discord_notify_series_added: this.settings.discordNotifySeriesAdded,
+                            episode_number_format: this.settings.episodeNumberFormat,
+                            episode_number_padding: this.settings.episodeNumberPadding,
+                            episode_separator: this.settings.episodeSeparator,
+                            episode_include_title: this.settings.episodeIncludeTitle
+                        })
+                    });
+                    this.showSettings = false;
+                    this.showToastMessage("Settings saved.");
+                    // Refresh auto-check status to get updated next check time
+                    await this.fetchAutoStatus();
+                },
+                // ... LOGS & JOBS ...
+                setupStream() {
+                    // Store EventSource reference for cleanup
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                    
+                    const es = new EventSource('/api/stream');
+                    this.eventSource = es;
+                    
+                    es.onopen = () => {
+                        console.log('Log stream connected');
+                    };
+                    
+                    es.onmessage = (e) => {
+                        if(e.data && !e.data.startsWith(':')) {
+                            this.logs.push(e.data);
+                            // Keep only last 1000 lines to prevent memory issues
+                            if (this.logs.length > 1000) {
+                                this.logs.shift();
+                            }
+                            this.$nextTick(() => {
+                                const el = document.getElementById('terminal');
+                                if(el) el.scrollTop = el.scrollHeight;
+                            });
+                        }
+                    };
+                    
+                    es.onerror = (e) => {
+                        // Reconnect on error
+                        console.error('EventSource error, reconnecting...', e);
+                        if (this.eventSource) {
+                            this.eventSource.close();
+                            this.eventSource = null;
+                        }
+                        // Only reconnect if we're on the jobs view
+                        if (this.currentView === 'jobs') {
+                            setTimeout(() => {
+                                this.setupStream();
+                            }, 3000);
+                        }
+                    };
+                },
+                async fetchJobs() {
+                    const res = await fetch('/api/jobs');
+                    if(res.ok) this.jobs = await res.json();
+                },
+                async cancelJob(id) {
+                    const res = await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
+                    if (res.ok) {
+                        this.showToastMessage('Job cancelled successfully.');
+                        // Refresh jobs list to show updated status
+                        await this.fetchJobs();
+                    } else {
+                        const err = await res.json();
+                        this.showToastMessage(err.message || 'Failed to cancel job.');
+                    }
+                },
+                formatJobTime(job) {
+                    // Use started_at for running jobs, created_at for others
+                    const timeStr = (job.status === 'running' && job.started_at) ? job.started_at : job.created_at;
+                    if (!timeStr) return '—';
+                    try {
+                        const date = new Date(timeStr);
+                        // Use currentTime for reactivity (updates every second)
+                        const now = new Date(this.currentTime);
+                        const diffMs = now - date;
+                        const diffSeconds = Math.floor(diffMs / 1000);
+                        const diffMinutes = Math.floor(diffSeconds / 60);
+                        const diffHours = Math.floor(diffMinutes / 60);
+                        
+                        // Show relative time for recent jobs (< 1 hour)
+                        if (diffMinutes < 1) {
+                            return `${diffSeconds}s ago`;
+                        } else if (diffMinutes < 60) {
+                            return `${diffMinutes}m ago`;
+                        } else if (diffHours < 24) {
+                            return `${diffHours}h ${diffMinutes % 60}m ago`;
+                        }
+                        
+                        // For older jobs, show actual time
+                        return date.toLocaleTimeString(undefined, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                        });
+                    } catch (e) {
+                        return timeStr;
+                    }
+                },
+                // ... UTILS ...
+                formatUpdatedDate(raw) {
+                    if(!raw) return 'Never';
+                    return new Date(raw).toLocaleDateString();
+                },
+                showToastMessage(msg) {
+                    this.toastMessage = msg;
+                    this.showToast = true;
+                    this.toastClosing = false;
+                    if(this.toastTimeoutId) clearTimeout(this.toastTimeoutId);
+                    this.toastTimeoutId = setTimeout(() => {
+                        this.toastClosing = true;
+                        setTimeout(() => this.showToast = false, 500);
+                    }, 3000);
+                },
+                // ... INIT ...
+                async fetchGlobalSettings() {
+                    const res = await fetch('/api/settings');
+                    const d = await res.json();
+                    this.settings.format = d.format || 'images';
+                    this.settings.pathTemplate = d.path_template || 'author_series_flat';
+                    this.settings.concurrentChapters = d.concurrent_chapters || 6;
+                    this.settings.concurrentPages = d.concurrent_pages || 120;
+                    this.settings.debugMode = d.debug_mode === "1" || d.debug_mode === true;
+                    this.settings.autoCheckInterval = d.auto_check_interval || 5;
+                    this.settings.discordWebhookUrl = d.discord_webhook_url || '';
+                    this.settings.discordNotifyNewEpisode = d.discord_notify_new_episode !== false;
+                    this.settings.discordNotifyDownloadStart = d.discord_notify_download_start === true;
+                    this.settings.discordNotifyDownloadComplete = d.discord_notify_download_complete !== false;
+                    this.settings.discordNotifyDownloadFailed = d.discord_notify_download_failed !== false;
+                    this.settings.discordNotifySeriesAdded = d.discord_notify_series_added !== false;
+                },
+                formatAutoCheckInterval(minutes) {
+                    if (!minutes) return '5 minutes';
+                    if (minutes < 60) {
+                        return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+                    } else if (minutes < 1440) {
+                        const hours = Math.floor(minutes / 60);
+                        const mins = minutes % 60;
+                        if (mins === 0) {
+                            return `${hours} hour${hours !== 1 ? 's' : ''}`;
+                        }
+                        return `${hours} hour${hours !== 1 ? 's' : ''} ${mins} minute${mins !== 1 ? 's' : ''}`;
+                    } else {
+                        const days = Math.floor(minutes / 1440);
+                        return `${days} day${days !== 1 ? 's' : ''}`;
+                    }
+                },
+                async loadSeriesSettings(id) {
+                    try {
+                        const res = await fetch(`/api/series_settings/${id}`);
+                        if (res.ok) {
+                            this.perSeriesSettings[id] = await res.json();
+                        } else {
+                            // If settings don't exist, initialize with defaults
+                            this.perSeriesSettings[id] = {
+                                formatOverride: '',
+                                autoDownloadLatest: false,
+                                pathTemplateOverride: '',
+                                scheduleDay: null,
+                                scheduleTime: ''
+                            };
+                        }
+                    } catch (error) {
+                        console.error('Error loading series settings:', error);
+                        // Initialize with defaults on error
+                        this.perSeriesSettings[id] = {
+                            formatOverride: '',
+                            autoDownloadLatest: false,
+                            pathTemplateOverride: '',
+                            scheduleDay: null,
+                            scheduleTime: ''
+                        };
+                    }
+                },
+                // Computed properties
+                buildPathTemplateOptions(format) {
+                    return [
+                        { value: 'author_series_flat', label: 'Author / Series / File' },
+                        { value: 'author_series_folder', label: 'Author / Series / Ep Folder / File' },
+                        { value: 'series_only_flat', label: 'Series / File' }
+                    ];
+                },
+                describeExamplePath(t, f) { return t + ' example...'; }, // Simplified for brevity
+                async fetchAutoStatus() {
+                    const res = await fetch('/api/auto_status');
+                    if (res.ok) {
+                    const d = await res.json();
+                    this.lastAutoCheck = d.last;
+                    this.nextAutoCheck = d.next;
+                        // Restart countdown timer if interval changed
+                        this.startCountdownTimer();
+                    }
+                },
+                startCountdownTimer() {
+                    // Clear existing timer if any
+                    if (this.countdownTimer) {
+                        clearInterval(this.countdownTimer);
+                    }
+                    // Update countdown every second by updating reactive currentTime
+                    this.countdownTimer = setInterval(() => {
+                        this.currentTime = Date.now();
+                    }, 1000);
+                },
+                confirmFullReset() { this.showResetConfirmOne = true; },
+                clearFilters() {
+                    this.searchQuery = '';
+                    this.filterBy = 'all';
+                    this.sortBy = 'title-asc';
+                },
+                clearFilters() {
+                    this.searchQuery = '';
+                    this.filterBy = 'all';
+                    this.sortBy = 'title-asc';
+                },
+                async executeFullReset() {
+                    await fetch('/api/reset', { method: 'POST' });
+                    this.showResetConfirmTwo = false;
+                    this.showSettings = false;
+                    this.subscriptions = [];
+                    this.jobs = [];
+                    this.logs = [];
+                    this.showToastMessage('Factory reset complete.');
+                }
+            },
+            computed: {
+                effectiveSubFormat() {
+                    return (this.subSettings && this.subSettings.formatOverride) || this.settings.format || 'images';
+                },
+                globalPathTemplateOptions() {
+                    return this.buildPathTemplateOptions(this.settings.format || 'images');
+                },
+                subPathTemplateOptions() {
+                    return this.buildPathTemplateOptions(this.effectiveSubFormat);
+                },
+                formattedLastAutoCheck() {
+                    if (!this.lastAutoCheck) return '—';
+                    try {
+                        // Parse the ISO timestamp (should be in UTC with timezone info)
+                        const date = new Date(this.lastAutoCheck);
+                        
+                        // Check if date is valid
+                        if (isNaN(date.getTime())) {
+                            return '—';
+                        }
+                        
+                        // Format as local date and time - JavaScript automatically converts UTC to user's local timezone
+                        return date.toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                        });
+                    } catch (e) {
+                        return '—';
+                    }
+                },
+                formattedNextAutoCheck() {
+                    if (!this.nextAutoCheck) return '—';
+                    try {
+                        const nextDate = new Date(this.nextAutoCheck);
+                        const now = new Date(this.currentTime); // Use reactive currentTime
+                        const diffMs = nextDate - now;
+                        
+                        if (diffMs <= 0) return 'Now';
+                        
+                        const diffSeconds = Math.floor(diffMs / 1000);
+                        const diffMinutes = Math.floor(diffSeconds / 60);
+                        const diffHours = Math.floor(diffMinutes / 60);
+                        const diffDays = Math.floor(diffHours / 24);
+                        
+                        if (diffDays > 0) {
+                            const hours = diffHours % 24;
+                            if (hours > 0) {
+                                return `${diffDays}d ${hours}h`;
+                            }
+                            return `${diffDays}d`;
+                        } else if (diffHours > 0) {
+                            const minutes = diffMinutes % 60;
+                            if (minutes > 0) {
+                                return `${diffHours}h ${minutes}m`;
+                            }
+                            return `${diffHours}h`;
+                        } else if (diffMinutes > 0) {
+                            return `${diffMinutes}m`;
+                        } else {
+                            return `${diffSeconds}s`;
+                        }
+                    } catch (e) {
+                        return '—';
+                    }
+                },
+                hasActiveFilters() {
+                    return this.searchQuery.trim() !== '' || this.filterBy !== 'all' || this.sortBy !== 'title-asc';
+                },
+                filteredSubscriptions() {
+                    let result = [...this.subscriptions];
+                    
+                    // Apply search filter
+                    if (this.searchQuery.trim() !== '') {
+                        const query = this.searchQuery.toLowerCase().trim();
+                        result = result.filter(sub => {
+                            const title = (sub.title || '').toLowerCase();
+                            const artist = (sub.artist || '').toLowerCase();
+                            return title.includes(query) || artist.includes(query);
+                        });
+                    }
+                    
+                    // Apply filter
+                    if (this.filterBy === 'auto-download') {
+                        result = result.filter(sub => sub.auto_download_latest === 1 || sub.auto_download_latest === true);
+                    } else if (this.filterBy === 'no-auto-download') {
+                        result = result.filter(sub => !sub.auto_download_latest || sub.auto_download_latest === 0 || sub.auto_download_latest === false);
+                    }
+                    
+                    // Apply sorting
+                    result.sort((a, b) => {
+                        switch (this.sortBy) {
+                            case 'title-asc':
+                                return (a.title || '').localeCompare(b.title || '');
+                            case 'title-desc':
+                                return (b.title || '').localeCompare(a.title || '');
+                            case 'artist-asc':
+                                return (a.artist || '').localeCompare(b.artist || '');
+                            case 'artist-desc':
+                                return (b.artist || '').localeCompare(a.artist || '');
+                            case 'updated-desc':
+                                const dateA = a.last_updated ? new Date(a.last_updated).getTime() : 0;
+                                const dateB = b.last_updated ? new Date(b.last_updated).getTime() : 0;
+                                return dateB - dateA;
+                            case 'updated-asc':
+                                const dateA2 = a.last_updated ? new Date(a.last_updated).getTime() : 0;
+                                const dateB2 = b.last_updated ? new Date(b.last_updated).getTime() : 0;
+                                return dateA2 - dateB2;
+                            case 'added-desc':
+                                // Higher ID = more recently added (newest first)
+                                return (b.id || 0) - (a.id || 0);
+                            case 'added-asc':
+                                // Lower ID = older (oldest first)
+                                return (a.id || 0) - (b.id || 0);
+                            default:
+                                return 0;
+                        }
+                    });
+                    
+                    return result;
+                },
+                filteredEpisodes() {
+                    let result = [...this.episodes];
+                    
+                    // Apply search filter
+                    if (this.episodeSearchQuery.trim() !== '') {
+                        const query = this.episodeSearchQuery.toLowerCase().trim();
+                        result = result.filter(ep => {
+                            const title = (ep.title || '').toLowerCase();
+                            const epNum = ep.ep_num?.toString() || '';
+                            return title.includes(query) || epNum.includes(query);
+                        });
+                    }
+                    
+                    // Apply download status filter
+                    if (this.episodeFilter === 'downloaded') {
+                        result = result.filter(ep => ep.downloaded);
+                    } else if (this.episodeFilter === 'not-downloaded') {
+                        result = result.filter(ep => !ep.downloaded);
+                    }
+                    
+                    return result;
+                }
+            },
+            watch: {
+              currentView(newVal) {
+                if (newVal === 'subscriptions') {
+                    this.fetchSubscriptions(true); // Immediate when switching views
+                    // Ensure polling continues for all processing series
+                    this.$nextTick(() => {
+                        this.subscriptions.forEach((sub) => {
+                            if (sub.url && (sub.is_processing || this.progressByUrl?.[sub.url])) {
+                                this.startProgressPolling(sub.url);
+                            }
+                        });
+                    });
+                }
+                if (newVal === 'jobs') {
+                    this.fetchJobs();
+                    this.jobsAutoRefreshTimer = setInterval(this.fetchJobs, 2000);
+                    // Ensure log stream is active when viewing jobs
+                    if (!this.eventSource || this.eventSource.readyState === EventSource.CLOSED) {
+                        this.setupStream();
+                    }
+                } else if (this.jobsAutoRefreshTimer) {
+                    clearInterval(this.jobsAutoRefreshTimer);
+                }
+              }
+            },
+            mounted() {
+              this.initialized = true;
+              this.fetchGlobalSettings();
+              this.fetchSubscriptions(true); // Immediate on mount
+              this.setupStream();
+              this.fetchAutoStatus();
+              // Start countdown timer
+              this.startCountdownTimer();
+              // Polling for auto-download status
+              setInterval(this.fetchAutoStatus, 60000);
+              // Periodic check to ensure actively caching series are being polled
+              setInterval(() => {
+                  if (this.currentView === 'subscriptions') {
+                      this.subscriptions.forEach((sub) => {
+                          if (sub.url) {
+                              // Only poll if actively caching (has progress data)
+                              const hasProgress = this.progressByUrl?.[sub.url] && 
+                                  this.progressByUrl[sub.url].status === 'caching' &&
+                                  (this.progressByUrl[sub.url].progress !== undefined || 
+                                   this.progressByUrl[sub.url].current_episode !== undefined);
+                              const isProcessingWithProgress = sub.is_processing && sub.processing_progress !== undefined;
+                              
+                              if ((hasProgress || isProcessingWithProgress) && !this.progressTimers?.[sub.url]) {
+                                  this.startProgressPolling(sub.url);
+                              }
+                          }
+                      });
+                  }
+              }, 2000);
+            },
+            beforeUnmount() {
+              // Clean up timers
+              if (this.fetchSubscriptionsTimer) {
+                clearTimeout(this.fetchSubscriptionsTimer);
+              }
+              // Stop all progress polling
+              if (this.progressTimers) {
+                Object.keys(this.progressTimers).forEach(url => {
+                  this.stopProgressPolling(url);
+                });
+              }
+              // Close EventSource
+              if (this.eventSource) {
+                this.eventSource.close();
+              }
+              // Clear countdown timer
+              if (this.countdownTimer) {
+                clearInterval(this.countdownTimer);
+              }
+            }
+        });
+        
+        app.config.compilerOptions.delimiters = ['[[', ']]'];
+        app.mount('#app');
+    </script>
+</body>
+</html>
