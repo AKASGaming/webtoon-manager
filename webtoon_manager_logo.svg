@@ -1,40 +1,23 @@
-<svg width="600" height="160" viewBox="0 0 600 160" xmlns="http://www.w3.org/2000/svg">
-
-	<!-- Green Icon Box -->
-	<rect x="20" y="34" width="72" height="72" rx="14" fill="#059669" />
-
-	<!-- Smaller centered Book Icon -->
-	<g fill="#FFFFFF" transform="translate(20,34)">
-		<!-- Centering group -->
-		<g transform="translate(36,36) scale(0.18)">
-			<g transform="translate(-192,-116)">
-				<path d="M128 0C90 0 64 20 64 20V232C64 232 90 212 128 212C166 212 192 232 192 232V20C192 20 166 0 128 0Z"/>
-				<path d="M256 0C218 0 192 20 192 20V232C192 232 218 212 256 212C294 212 320 232 320 232V20C320 20 294 0 256 0Z"/>
-			</g>
-		</g>
-	</g>
-
-	<!-- Text Block -->
-	<g transform="translate(120,0)">
-		<!-- WEBTOON -->
-		<text x="0" y="65"
-			  font-family="Arial, Helvetica, sans-serif"
-			  font-weight="700"
-			  font-size="34"
-			  fill="#FFFFFF"
-			  letter-spacing="2">
-			WEBTOON
-		</text>
-
-		<!-- MANAGER (moved up slightly) -->
-		<text x="0" y="102"
-			  font-family="Arial, Helvetica, sans-serif"
-			  font-weight="600"
-			  font-size="24"
-			  fill="#22C55E"
-			  letter-spacing="3.5">
-			MANAGER
-		</text>
-	</g>
-
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 8334 2072" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(28.7777,0,0,28.7777,-575.554,-978.442)">
+        <path d="M92,45.804L92,94.196C92,100.711 86.711,106 80.196,106L31.804,106C25.289,106 20,100.711 20,94.196L20,45.804C20,39.289 25.289,34 31.804,34L80.196,34C86.711,34 92,39.289 92,45.804Z" style="fill:rgb(22,163,74);"/>
+    </g>
+    <g transform="matrix(5.17999,0,0,5.17999,41.4399,435.119)">
+        <g>
+            <g>
+                <path d="M128,0C90,0 64,20 64,20L64,232C64,232 90,212 128,212C166,212 192,232 192,232L192,20C192,20 166,0 128,0Z" style="fill:white;fill-rule:nonzero;"/>
+                <path d="M256,0C218,0 192,20 192,20L192,232C192,232 218,212 256,212C294,212 320,232 320,232L320,20C320,20 294,0 256,0Z" style="fill:white;fill-rule:nonzero;"/>
+            </g>
+        </g>
+    </g>
+    <g transform="matrix(28.7777,0,0,28.7777,2877.77,-978.442)">
+        <g transform="matrix(1,0,0,1,0,65)">
+            <text x="0px" y="0px" style="font-family:'Helvetica';font-size:34px;fill:white;">W<tspan x="32.771px 56.129px 79.486px 100.337px 127.463px 154.59px " y="0px 0px 0px 0px 0px 0px ">EBTOON</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,0,102)">
+            <text x="0px" y="0px" style="font-family:'Helvetica';font-size:24px;fill:rgb(34,197,94);">M<tspan x="20.832px 37.68px 55.852px 72.7px 92.208px 109.056px " y="0px 0px 0px 0px 0px 0px ">ANAGER</tspan></text>
+        </g>
+    </g>
 </svg>
