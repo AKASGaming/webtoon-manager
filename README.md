@@ -1,6 +1,6 @@
 # WebtoonHub
 
-A web-based application for managing and downloading webtoons from various sources. Track your favorite series, automatically check for new episodes, and download them in your preferred format (PDF, images, or CBZ).
+A web-based GUI application for managing and downloading webtoons using **[webtoon-downloader CLI](https://github.com/Zehina/webtoon-downloader)!** Track your favorite series, automatically check for new episodes, and download them in your preferred format (PDF, images, or CBZ).
 
 ## Features
 
