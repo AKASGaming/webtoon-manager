@@ -1,6 +1,6 @@
 # WebtoonHub
 
-A web-based application for managing and downloading webtoons from various sources. Track your favorite series, automatically check for new episodes, and download them in your preferred format (PDF, images, ZIP, or CBZ).
+A web-based application for managing and downloading webtoons from various sources. Track your favorite series, automatically check for new episodes, and download them in your preferred format (PDF, images, or CBZ).
 
 ## Features
 
@@ -18,13 +18,34 @@ A web-based application for managing and downloading webtoons from various sourc
 - Docker and Docker Compose (for containerized deployment)
 - Internet connection for scraping and downloading webtoons
 
+## Quick Start (Docker Compose)
+
+The fastest way to get started is using Docker Compose:
+
+```bash
+# Clone the repository
+git clone https://github.com/AKASGaming/webtoon-manager.git
+cd webtoonhub
+
+# Start the application
+docker-compose up -d
+
+# View logs (optional)
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+```
+
+Access the web interface at `http://localhost:8128`
+
 ## Installation
 
-### Using Docker (Recommended)
+### Using Docker Compose (Recommended)
 
 1. Clone this repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/AKASGaming/webtoon-manager.git
    cd webtoonhub
    ```
 
@@ -35,11 +56,37 @@ A web-based application for managing and downloading webtoons from various sourc
 
 3. Access the web interface at `http://localhost:8128`
 
+#### Docker Compose Configuration
+
+The `docker-compose.yml` file is included in the repository:
+
+```yaml
+services:
+  webtoon-manager:
+    build: .
+    container_name: webtoon_manager
+    ports:
+      - "8128:8128"
+    volumes:
+      - ./downloads:/app/downloads
+      - ./db:/app/db  # Persist the SQLite database
+      - ./cache/thumbnails:/app/cache/thumbnails
+    restart: unless-stopped
+```
+
+**Volume Mounts:**
+- `./downloads` - Stores all downloaded webtoon files
+- `./db` - Persists the SQLite database
+- `./cache/thumbnails` - Caches episode thumbnails for faster loading
+
+**Ports:**
+- `8128` - Web interface port (change if needed)
+
 ### Local Development
 
 1. Clone this repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/AKASGaming/webtoon-manager.git
    cd webtoonhub
    ```
 
@@ -54,12 +101,7 @@ A web-based application for managing and downloading webtoons from various sourc
    pip install -r requirements.txt
    ```
 
-4. Create necessary directories:
-   ```bash
-   mkdir -p downloads db cache/thumbnails
-   ```
-
-5. Run the application:
+4. Run the application:
    ```bash
    python app.py
    ```
@@ -78,8 +120,6 @@ A web-based application for managing and downloading webtoons from various sourc
 ```
 webtoonhub/
 ├── app.py                 # Main Flask application
-├── scrape.py              # Web scraping functionality
-├── download_process.py    # Download processing logic
 ├── requirements.txt       # Python dependencies
 ├── Dockerfile             # Docker image configuration
 ├── docker-compose.yml     # Docker Compose configuration
@@ -98,26 +138,17 @@ The application uses a SQLite database to store:
 - Jobs (download job history)
 - Settings (global and per-series preferences)
 
-All data is persisted in the `db/` directory when using Docker volumes.
+## Credits
 
-## Development
+This project uses the following open-source libraries and tools:
 
-### Running in Debug Mode
+- **[webtoon-downloader](https://pypi.org/project/webtoon-downloader/)** - Core webtoon downloading functionality
+- **[Flask](https://flask.palletsprojects.com/)** - Web framework for the application interface
+- **[Beautiful Soup](https://www.crummy.com/software/BeautifulSoup/)** - HTML parsing and web scraping
+- **[Requests](https://requests.readthedocs.io/)** - HTTP library for making web requests
+- **[lxml](https://lxml.de/)** - XML and HTML parser
 
-The application runs in debug mode by default when executed directly:
-```bash
-python app.py
-```
-
-For production deployments, ensure debug mode is disabled.
-
-## License
-
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
+Special thanks to the developers and maintainers of these projects for making this application possible.
 
 ## Disclaimer
 
