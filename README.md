@@ -42,12 +42,12 @@ A web-based GUI application for managing and downloading webtoons using **[webto
   <img src="demo_pics/series_settings_modal.png" alt="Series settings modal for configuring individual series preferences" width="200" />
 </p>
 
-### Documentation
+### Extras
 
 <p align="middle">
-  <img src="demo_pics/readme_documentation_view.png" alt="README documentation view showing project documentation" width="200" />
-  <img src="demo_pics/readme_features_section.png" alt="README features section highlighting application capabilities" width="200" />
-  <img src="demo_pics/readme_installation_section.png" alt="README installation section with setup instructions" width="200" />
+  <img src="demo_pics/readme_documentation_view.png" alt="Adding subscriptions" width="200" />
+  <img src="demo_pics/readme_features_section.png" alt="Quick download menu" width="200" />
+  <img src="demo_pics/readme_installation_section.png" alt="Job and downloads" width="200" />
 </p>
 
 ## Prerequisites
