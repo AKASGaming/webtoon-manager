@@ -1,5 +1,11 @@
 # Webtoon Manager
 
+<p align="middle">
+  <a href="webtoon_manager_logo.png" target="_blank">
+    <img src="demo_pics/main_subscriptions_view.png" width="1000" />
+  </a>
+</p>
+
 A web-based GUI application for managing and downloading webtoons using **[webtoon-downloader CLI!](https://github.com/Zehina/webtoon-downloader)** Track your favorite series, automatically check for new episodes, and download them in your preferred format (PDF, images, or CBZ).
 
 ## Features

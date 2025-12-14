@@ -1,0 +1,40 @@
+<svg width="600" height="160" viewBox="0 0 600 160" xmlns="http://www.w3.org/2000/svg">
+
+	<!-- Green Icon Box -->
+	<rect x="20" y="34" width="72" height="72" rx="14" fill="#059669" />
+
+	<!-- Smaller centered Book Icon -->
+	<g fill="#FFFFFF" transform="translate(20,34)">
+		<!-- Centering group -->
+		<g transform="translate(36,36) scale(0.18)">
+			<g transform="translate(-192,-116)">
+				<path d="M128 0C90 0 64 20 64 20V232C64 232 90 212 128 212C166 212 192 232 192 232V20C192 20 166 0 128 0Z"/>
+				<path d="M256 0C218 0 192 20 192 20V232C192 232 218 212 256 212C294 212 320 232 320 232V20C320 20 294 0 256 0Z"/>
+			</g>
+		</g>
+	</g>
+
+	<!-- Text Block -->
+	<g transform="translate(120,0)">
+		<!-- WEBTOON -->
+		<text x="0" y="65"
+			  font-family="Arial, Helvetica, sans-serif"
+			  font-weight="700"
+			  font-size="34"
+			  fill="#FFFFFF"
+			  letter-spacing="2">
+			WEBTOON
+		</text>
+
+		<!-- MANAGER (moved up slightly) -->
+		<text x="0" y="102"
+			  font-family="Arial, Helvetica, sans-serif"
+			  font-weight="600"
+			  font-size="24"
+			  fill="#22C55E"
+			  letter-spacing="3.5">
+			MANAGER
+		</text>
+	</g>
+
+</svg>
