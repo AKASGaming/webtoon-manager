@@ -17,37 +17,63 @@ A web-based GUI application for managing and downloading webtoons using **[webto
 ### Main Interface Views
 
 <p align="middle">
-  <img src="demo_pics/main_interface_dashboard.jpg" alt="Main interface dashboard showing the webtoon manager home screen" width="200" />
-  <img src="demo_pics/main_subscriptions_view.png" alt="Main subscriptions view displaying all tracked webtoon series" width="200" />
-  <img src="demo_pics/subscriptions_list_view.jpg" alt="Subscriptions list view with series cards and thumbnails" width="200" />
+  <a href="demo_pics/main_subscriptions_view.png" target="_blank">
+    <img src="demo_pics/main_subscriptions_view.png" alt="Main subscriptions view displaying all tracked webtoon series" width="600" />
+  </a>
 </p>
 
 ### Features & Functionality
 
 <p align="middle">
-  <img src="demo_pics/add_subscription_modal.png" alt="Add subscription modal for adding new webtoon series" width="200" />
-  <img src="demo_pics/series_episodes_list.png" alt="Series episodes list showing available episodes for download" width="200" />
-  <img src="demo_pics/filter_and_search_toolbar.png" alt="Filter and search toolbar for finding specific series" width="200" />
-  <img src="demo_pics/bulk_download_options.png" alt="Bulk download options for downloading multiple episodes" width="200" />
-  <img src="demo_pics/download_progress_display.png" alt="Download progress display showing active download jobs" width="200" />
-  <img src="demo_pics/download_jobs_view.png" alt="Download jobs view with job history and status" width="200" />
-  <img src="demo_pics/jobs_logs_view.png" alt="Jobs and logs view displaying detailed download logs" width="200" />
-  <img src="demo_pics/mobile_responsive_view.png" alt="Mobile responsive view showing the interface on smaller screens" width="200" />
+  <a href="demo_pics/add_subscription_modal.png" target="_blank">
+    <img src="demo_pics/add_subscription_modal.png" alt="Add subscription modal for adding new webtoon series" width="600" />
+  </a>
+  <a href="demo_pics/series_episodes_list.png" target="_blank">
+    <img src="demo_pics/series_episodes_list.png" alt="Series episodes list showing available episodes for download" width="600" />
+  </a>
+  <a href="demo_pics/filter_and_search_toolbar.png" target="_blank">
+    <img src="demo_pics/filter_and_search_toolbar.png" alt="Filter and search toolbar for finding specific series" width="600" />
+  </a>
+  <a href="demo_pics/bulk_download_options.png" target="_blank">
+    <img src="demo_pics/bulk_download_options.png" alt="Bulk download options for downloading multiple episodes" width="600" />
+  </a>
+  <a href="demo_pics/download_progress_display.png" target="_blank">
+    <img src="demo_pics/download_progress_display.png" alt="Download progress display showing active download jobs" width="600" />
+  </a>
+  <a href="demo_pics/download_jobs_view.png" target="_blank">
+    <img src="demo_pics/download_jobs_view.png" alt="Download jobs view with job history and status" width="600" />
+  </a>
+  <a href="demo_pics/jobs_logs_view.png" target="_blank">
+    <img src="demo_pics/jobs_logs_view.png" alt="Jobs and logs view displaying detailed download logs" width="600" />
+  </a>
+  <a href="demo_pics/mobile_responsive_view.png" target="_blank">
+    <img src="demo_pics/mobile_responsive_view.png" alt="Mobile responsive view showing the interface on smaller screens" width="600" />
+  </a>
 </p>
 
 ### Settings & Configuration
 
 <p align="middle">
-  <img src="demo_pics/global_settings_modal.png" alt="Global settings modal for configuring application preferences" width="200" />
-  <img src="demo_pics/series_settings_modal.png" alt="Series settings modal for configuring individual series preferences" width="200" />
+  <a href="demo_pics/global_settings_modal.png" target="_blank">
+    <img src="demo_pics/global_settings_modal.png" alt="Global settings modal for configuring application preferences" width="600" />
+  </a>
+  <a href="demo_pics/series_settings_modal.png" target="_blank">
+    <img src="demo_pics/series_settings_modal.png" alt="Series settings modal for configuring individual series preferences" width="600" />
+  </a>
 </p>
 
 ### Extras
 
 <p align="middle">
-  <img src="demo_pics/readme_documentation_view.png" alt="Adding subscriptions" width="200" />
-  <img src="demo_pics/readme_features_section.png" alt="Quick download menu" width="200" />
-  <img src="demo_pics/readme_installation_section.png" alt="Job and downloads" width="200" />
+  <a href="demo_pics/readme_documentation_view.png" target="_blank">
+    <img src="demo_pics/readme_documentation_view.png" alt="Adding subscriptions" width="600" />
+  </a>
+  <a href="demo_pics/readme_features_section.png" target="_blank">
+    <img src="demo_pics/readme_features_section.png" alt="Quick download menu" width="600" />
+  </a>
+  <a href="demo_pics/readme_installation_section.png" target="_blank">
+    <img src="demo_pics/readme_installation_section.png" alt="Job and downloads" width="600" />
+  </a>
 </p>
 
 ## Prerequisites
