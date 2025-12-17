@@ -39,6 +39,25 @@
             background-color: #10b981;
         }
         
+        /* Subscription list animations */
+        .subscription-list-move,
+        .subscription-list-enter-active,
+        .subscription-list-leave-active {
+            transition: all 0.3s ease;
+        }
+        .subscription-list-enter-from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        .subscription-list-leave-to {
+            opacity: 0;
+            transform: scale(0.8);
+        }
+        .subscription-list-leave-active {
+            position: absolute;
+            width: calc(25% - 1.5rem);
+        }
+        
         /* Fix for backdrop-blur ghosting during scroll */
         .processing-overlay {
             backdrop-filter: blur(4px);
@@ -243,7 +262,7 @@
                         <p class="text-sm mt-2">Try adjusting your search or filters</p>
                     </div>
                     
-                    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <transition-group v-else name="subscription-list" tag="div" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         <!-- CARD: Full Width Thumbnail Style -->
                         <div v-for="sub in filteredSubscriptions" :key="sub.id" 
                              class="subscription-card group relative flex flex-col bg-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden hover:border-green-500 hover:shadow-emerald-500/20 transition-all duration-300 cursor-pointer"
@@ -291,8 +310,10 @@
                             <!-- Action Bar -->
                             <div class="p-3 bg-gray-800 flex items-center justify-between gap-2">
                                 <div class="flex items-center gap-2">
-                                <div class="text-xs text-gray-500">
-                                        Last Updated: [[ formatUpdatedDate(sub.last_updated) ]]
+                                <div :class="['inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium', getLastUpdatedClass(sub.last_updated)]"
+                                     :title="formatUpdatedDateTooltip(sub.last_updated)">
+                                        <i class="fa-solid fa-clock text-[10px]"></i>
+                                        <span>[[ formatUpdatedDateShort(sub.last_updated) ]]</span>
                                     </div>
                                     <div v-if="sub.auto_download_latest" class="flex items-center gap-1 text-xs text-green-400" title="Auto-download enabled">
                                         <i class="fa-solid fa-download"></i>
@@ -300,7 +321,10 @@
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
-                                    <button @click.stop="openSubSettings(sub)" class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition" title="Settings">
+                                    <button @click.stop="openSubSettings(sub)" 
+                                            :disabled="isSeriesProcessing(sub)"
+                                            :class="['p-2 rounded transition', isSeriesProcessing(sub) ? 'text-gray-600 cursor-not-allowed opacity-50' : 'text-gray-400 hover:text-white hover:bg-gray-700']" 
+                                            :title="isSeriesProcessing(sub) ? 'Settings unavailable while processing' : 'Settings'">
                                         <i class="fa-solid fa-gear"></i>
                                     </button>
                                     <a :href="sub.url" target="_blank" @click.stop class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 rounded transition" title="Open on Webtoon">
@@ -309,7 +333,7 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </transition-group>
                 </div>
 
                 <!-- VIEW: EPISODES -->
@@ -395,9 +419,8 @@
                     <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-8">
                         <div v-for="ep in filteredEpisodes" :key="ep.id" 
                              :data-episode-num="ep.ep_num"
-                             class="bg-gray-800 rounded-xl overflow-hidden group relative border-2 transition-all duration-300 cursor-pointer hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20"
-                             :class="ep.downloaded ? 'border-green-600/50' : 'border-gray-700'"
-                             @click="downloadEpisode(ep)">
+                             class="bg-gray-800 rounded-xl overflow-hidden group relative border-2 transition-all duration-300 hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20"
+                             :class="ep.downloaded ? 'border-green-600/50' : 'border-gray-700'">
                             
                             <!-- Latest Badge -->
                             <div v-if="ep.is_latest" class="absolute top-2 left-2 z-20 bg-gradient-to-r from-red-600 to-red-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
@@ -410,9 +433,20 @@
                                 <i class="fa-solid fa-check text-xs"></i>
                             </div>
                             
-                            <!-- Download Button (for not downloaded) -->
-                            <div v-if="!ep.downloaded" class="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button @click.stop="downloadEpisode(ep)" class="bg-green-600 hover:bg-green-500 text-white w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-colors">
+                            <!-- Action Buttons -->
+                            <div class="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                <a v-if="ep.url" 
+                                   @click.stop 
+                                   :href="ep.url.startsWith('http') ? ep.url : 'https://www.webtoons.com' + ep.url" 
+                                   target="_blank"
+                                   class="bg-blue-600 hover:bg-blue-500 text-white w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-colors"
+                                   title="Open on Webtoon.com">
+                                    <i class="fa-solid fa-external-link text-xs"></i>
+                                </a>
+                                <button v-if="!ep.downloaded" 
+                                        @click.stop="confirmDownloadEpisode(ep)" 
+                                        class="bg-green-600 hover:bg-green-500 text-white w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-colors"
+                                        title="Download episode">
                                     <i class="fa-solid fa-download text-sm"></i>
                                 </button>
                             </div>
@@ -432,7 +466,9 @@
                                           :class="ep.is_latest ? 'bg-red-600/20 text-red-400' : 'bg-gray-700 text-gray-400'">
                                         #[[ ep.ep_num ]]
                                     </span>
-                                    <span v-if="ep.published_date" class="text-[9px] sm:text-[10px] text-gray-500 hidden sm:inline">
+                                    <span v-if="ep.published_date" 
+                                          class="text-[9px] sm:text-[10px] text-gray-500 hidden sm:inline cursor-help"
+                                          :title="formatEpisodeDateTooltip(ep.published_date)">
                                         [[ formatEpisodeDate(ep.published_date) ]]
                                     </span>
                                 </div>
@@ -503,16 +539,42 @@
                                 <tbody>
                                     <tr v-for="job in jobs" :key="job.id" class="border-b border-gray-700/50">
                                         <td class="py-2 text-gray-400">#[[ job.id ]]</td>
-                                        <td class="py-2 text-gray-200 truncate max-w-xs">[[ job.comic_title ]]</td>
-                                        <td class="py-2"><span :class="{'text-yellow-400': job.status==='running', 'text-green-400': job.status==='completed', 'text-red-400': job.status==='failed'}">[[ job.status ]]</span></td>
-                                        <td class="py-2 text-gray-500">[[ new Date(job.created_at).toLocaleTimeString() ]]</td>
+                                        <td class="py-2 text-gray-200 truncate max-w-xs">
+                                            [[ job.comic_title ]]
+                                            <span v-if="job.is_auto" class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30">AUTO</span>
+                                        </td>
+                                        <td class="py-2">
+                                            <span v-if="job.status === 'failed'" 
+                                                  @click.stop="openJobLogsModal(job.id)" 
+                                                  class="text-red-400 hover:text-red-300 cursor-pointer underline" 
+                                                  :title="'Click to view logs for job #' + job.id">
+                                                failed
+                                            </span>
+                                            <span v-else :class="{'text-yellow-400': job.status==='running', 'text-green-400': job.status==='completed', 'text-red-400': job.status==='failed'}">
+                                                [[ job.status ]]
+                                            </span>
+                                        </td>
+                                        <td class="py-2 text-gray-500" :title="formatJobTimeTooltip(job)">[[ formatJobTime(job) ]]</td>
                                         <td class="py-2"><button v-if="job.status === 'running'" @click="cancelJob(job.id)" class="text-red-400 hover:text-white">Cancel</button></td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                    <div class="bg-black rounded-lg border border-gray-700 flex-1 overflow-y-auto p-3 font-mono text-xs custom-scrollbar" id="terminal">
+                    <div class="bg-black rounded-lg border border-gray-700 flex-1 overflow-y-auto p-3 font-mono text-xs custom-scrollbar relative" id="terminal">
+                        <div class="absolute top-2 right-2 z-10 flex gap-2">
+                            <button @click="toggleAutoScroll" 
+                                    :class="autoScroll ? 'bg-green-600' : 'bg-gray-700'"
+                                    class="px-2 py-1 rounded text-white text-[10px] hover:bg-gray-600 transition-colors"
+                                    :title="autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'">
+                                <i :class="autoScroll ? 'fa-solid fa-toggle-on' : 'fa-solid fa-toggle-off'"></i>
+                            </button>
+                            <button @click="scrollToBottom" 
+                                    class="px-2 py-1 rounded bg-gray-700 text-white text-[10px] hover:bg-gray-600 transition-colors"
+                                    title="Scroll to bottom">
+                                <i class="fa-solid fa-arrow-down"></i>
+                            </button>
+                        </div>
                         <div v-if="logs.length === 0" class="text-gray-500 text-center py-8">
                             <i class="fa-solid fa-terminal text-2xl mb-2"></i>
                             <p>No logs yet. Start a download to see output here.</p>
@@ -523,7 +585,8 @@
                                  :class="{
                                      'text-red-400': line.includes('✗') || line.includes('Failed') || line.includes('Error') || line.includes('error') || line.includes('ERROR'),
                                      'text-yellow-400': line.includes('Warning') || line.includes('warning') || line.includes('WARNING'),
-                                     'text-green-300': !line.includes('✗') && !line.includes('Failed') && !line.includes('Error') && !line.includes('error') && !line.includes('ERROR') && !line.includes('Warning') && !line.includes('warning')
+                                     'text-purple-400': line.includes('[AUTO]'),
+                                     'text-green-300': !line.includes('✗') && !line.includes('Failed') && !line.includes('Error') && !line.includes('error') && !line.includes('ERROR') && !line.includes('Warning') && !line.includes('warning') && !line.includes('[AUTO]')
                                  }">
                                 [[ line ]]
                             </div>
@@ -956,8 +1019,17 @@
                     </div>
                 </div>
 
-                <div class="mt-6 flex justify-between">
-                    <button @click="deleteCurrentSubscription" class="text-red-500 hover:text-red-400 text-sm border border-red-900/50 bg-red-900/10 px-3 py-1 rounded">Delete Series</button>
+                <div class="mt-6 flex justify-between items-center">
+                    <div class="flex gap-2">
+                        <button @click="rescanEpisodes" 
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm flex items-center gap-2"
+                                :disabled="rescanningEpisodes">
+                            <i v-if="rescanningEpisodes" class="fa-solid fa-spinner fa-spin"></i>
+                            <i v-else class="fa-solid fa-arrows-rotate"></i>
+                            <span>[[ rescanningEpisodes ? 'Re-scanning...' : 'Re-scan Episodes' ]]</span>
+                        </button>
+                        <button @click="deleteCurrentSubscription" class="text-red-500 hover:text-red-400 text-sm border border-red-900/50 bg-red-900/10 px-3 py-1 rounded">Delete Series</button>
+                    </div>
                     <div class="flex gap-2">
                         <button @click="showSubSettingsModal = false" class="text-gray-400 hover:text-white px-3">Cancel</button>
                         <button @click="saveSubSettings" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded">Save</button>
@@ -1110,6 +1182,48 @@
             </div>
         </div>
 
+        <!-- JOB LOGS MODAL -->
+        <div v-if="showJobLogsModal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" @click.self="showJobLogsModal = false">
+            <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+                <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+                    <div>
+                        <h3 class="text-xl font-bold text-white">Job Logs</h3>
+                        <p class="text-sm text-gray-400 mt-1">Job #[[ jobLogsId ]] - [[ jobLogsTitle ]]</p>
+                    </div>
+                    <button @click="showJobLogsModal = false" class="text-gray-400 hover:text-white transition">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4 bg-black rounded-lg border border-gray-700 m-4 custom-scrollbar">
+                    <div v-if="loadingJobLogs" class="text-center py-8 text-gray-500">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
+                        <p>Loading logs...</p>
+                    </div>
+                    <div v-else-if="jobLogs.length === 0" class="text-gray-500 text-center py-8">
+                        <i class="fa-solid fa-terminal text-2xl mb-2"></i>
+                        <p>No logs available for this job.</p>
+                    </div>
+                    <div v-else class="font-mono text-xs">
+                        <div v-for="(line, idx) in jobLogs" :key="idx" 
+                             class="mb-1"
+                             :class="{
+                                 'text-red-400': line.includes('✗') || line.includes('Failed') || line.includes('Error') || line.includes('error') || line.includes('ERROR'),
+                                 'text-yellow-400': line.includes('Warning') || line.includes('warning') || line.includes('WARNING'),
+                                 'text-purple-400': line.includes('[AUTO]'),
+                                 'text-green-300': !line.includes('✗') && !line.includes('Failed') && !line.includes('Error') && !line.includes('error') && !line.includes('ERROR') && !line.includes('Warning') && !line.includes('warning') && !line.includes('[AUTO]')
+                             }">
+                            [[ line ]]
+                        </div>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-700 flex justify-end">
+                    <button @click="showJobLogsModal = false" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- TOAST -->
         <div v-if="showToast" :class="['fixed bottom-4 right-4 z-[100] bg-gray-800 border border-green-500 text-white px-4 py-3 rounded shadow-lg flex items-center gap-2 transition-all duration-500', toastClosing ? 'opacity-0 translate-y-2' : 'opacity-100']">
             <i class="fa-solid fa-check-circle text-green-400"></i> [[ toastMessage ]]
@@ -1124,7 +1238,7 @@
         const app = createApp({
             data() {
               return {
-                appVersion: 'v0.9.1',
+                appVersion: 'v0.9.2',
                 initialized: false,
                 currentView: 'subscriptions',
                 showAboutModal: false,
@@ -1147,6 +1261,8 @@
                 showSettings: false,
                 showDownloadOptionsModal: false,
                 showSubSettingsModal: false,
+                rescanningEpisodes: false,
+                rescanningEpisodes: false,
                 showToast: false,
                 toastMessage: '',
                 toastTimeoutId: null,
@@ -1156,6 +1272,14 @@
                 seriesToDelete: null,
                 showResetConfirmOne: false,
                 showResetConfirmTwo: false,
+                showJobLogsModal: false,
+                jobLogs: [],
+                jobLogsTitle: '',
+                jobLogsId: null,
+                loadingJobLogs: false,
+                showDbMigrationModal: false,
+                dbMigrationError: window.serverDbError || '',
+                migratingDatabase: false,
                 // Input/Active States
                 newUrl: '',
                 errorMessage: '',
@@ -1167,6 +1291,7 @@
                 episodes: [],
                 modalEpisodes: null,
                 logs: [],
+                autoScroll: true,
                 // Pagination
                 currentPage: 1,
                 totalPages: 1,
@@ -1426,19 +1551,24 @@
                                             if (!progressData || Object.keys(progressData).length === 0) {
                                                 // Clear progress and update card one last time
                                                 if (this.progressByUrl) {
-                                delete this.progressByUrl[url];
+                                                    delete this.progressByUrl[url];
                                                 }
-                                                // Update card to reflect final state
-                                                this.updateSingleCard(url);
-                                this.stopProgressPolling(url);
-                                return;
-                            }
+                                                // Update card to reflect final state - force immediate update
+                                                await this.updateSingleCard(url);
+                                                // Force Vue to re-render by triggering a reactive update
+                                                this.$forceUpdate();
+                                                this.stopProgressPolling(url);
+                                                return;
+                                            }
                                         } else {
                                             // No progress data or error - clear and stop
                                             if (this.progressByUrl) {
                                                 delete this.progressByUrl[url];
                                             }
-                                            this.updateSingleCard(url);
+                                            // Update card to reflect final state - force immediate update
+                                            await this.updateSingleCard(url);
+                                            // Force Vue to re-render by triggering a reactive update
+                                            this.$forceUpdate();
                                             this.stopProgressPolling(url);
                                             return;
                                         }
@@ -1529,10 +1659,26 @@
                             // Update the card in place - merge with existing to preserve any client-side state
                             // Use Object.assign to trigger Vue reactivity without replacing the entire object
                             const existingCard = this.subscriptions[cardIndex];
+                            
+                            // If server says it's not processing, explicitly clear all processing-related fields
+                            if (!serverSub.is_processing) {
+                                existingCard.is_processing = false;
+                                existingCard.processing_title = undefined;
+                                existingCard.processing_subtitle = undefined;
+                                existingCard.processing_progress = undefined;
+                                existingCard.processing_current_episode = undefined;
+                                existingCard.processing_total_episodes = undefined;
+                                // Clear progress data
+                                if (this.progressByUrl && this.progressByUrl[url]) {
+                                    delete this.progressByUrl[url];
+                                }
+                            }
+                            
+                            // Update with server data
                             Object.assign(existingCard, serverSub);
                             
-                            // Preserve progress data from progressByUrl if available
-                            if (this.progressByUrl && this.progressByUrl[url]) {
+                            // Preserve progress data from progressByUrl if available (only if still processing)
+                            if (serverSub.is_processing && this.progressByUrl && this.progressByUrl[url]) {
                                 // Progress data is already in progressByUrl, getProcessingProgress will use it
                             }
                         } else {
@@ -1789,13 +1935,19 @@
                     if (!dateStr) return '';
                     try {
                         const date = new Date(dateStr);
-                        // Format as M/D/YY (e.g., "2/2/25")
-                        const month = date.getMonth() + 1;
-                        const day = date.getDate();
-                        const year = date.getFullYear().toString().slice(-2);
-                        return `${month}/${day}/${year}`;
+                        // Format as full date and time
+                        return date.toLocaleString(undefined, {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        });
                     } catch (e) {
                         return dateStr;
+                    }
+                },
+                confirmDownloadEpisode(ep) {
+                    if (confirm(`Download Episode ${ep.ep_num}: "${ep.title}"?`)) {
+                        this.downloadEpisode(ep);
                     }
                 },
                 downloadEpisode(ep, series = null) {
@@ -1870,6 +2022,38 @@
                     this.showSubSettingsModal = true;
                 },
                 closeSubSettings() { this.showSubSettingsModal = false; },
+                async rescanEpisodes() {
+                    const subId = this.subSettingsSeries?.id;
+                    if (!subId) {
+                        this.showToastMessage("Error: No series selected.");
+                        return;
+                    }
+                    
+                    if (this.rescanningEpisodes) return; // Prevent double-clicking
+                    
+                    this.rescanningEpisodes = true;
+                    try {
+                        const res = await fetch(`/api/subscription/${subId}/rescan`, {
+                            method: 'POST'
+                        });
+                        if (res.ok) {
+                            this.showToastMessage("Re-scanning episodes... This may take a moment.");
+                            // Close modal after a short delay
+                            setTimeout(() => {
+                                this.showSubSettingsModal = false;
+                                this.rescanningEpisodes = false;
+                            }, 1000);
+                        } else {
+                            const error = await res.json().catch(() => ({ message: 'Failed to start re-scan' }));
+                            this.showToastMessage(`Error: ${error.message || 'Failed to start re-scan'}`);
+                            this.rescanningEpisodes = false;
+                        }
+                    } catch (error) {
+                        console.error('Error starting re-scan:', error);
+                        this.showToastMessage("Error: Failed to start re-scan.");
+                        this.rescanningEpisodes = false;
+                    }
+                },
                 async saveSubSettings() {
                     const subId = this.subSettingsSeries.id;
                     if (!subId) {
@@ -1942,6 +2126,8 @@
                     
                     es.onopen = () => {
                         console.log('Log stream connected');
+                        // Load historical logs when connection opens
+                        this.loadHistoricalLogs();
                     };
                     
                     es.onmessage = (e) => {
@@ -1951,10 +2137,12 @@
                             if (this.logs.length > 1000) {
                                 this.logs.shift();
                             }
-                            this.$nextTick(() => {
-                                const el = document.getElementById('terminal');
-                                if(el) el.scrollTop = el.scrollHeight;
-                            });
+                            if (this.autoScroll) {
+                                this.$nextTick(() => {
+                                    const el = document.getElementById('terminal');
+                                    if(el) el.scrollTop = el.scrollHeight;
+                                });
+                            }
                         }
                     };
                     
@@ -1988,42 +2176,376 @@
                         this.showToastMessage(err.message || 'Failed to cancel job.');
                     }
                 },
+                async openJobLogsModal(jobId) {
+                    this.jobLogsId = jobId;
+                    this.loadingJobLogs = true;
+                    this.showJobLogsModal = true;
+                    try {
+                        const res = await fetch(`/api/jobs/${jobId}/logs`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.jobLogs = data.logs || [];
+                            this.jobLogsTitle = data.comic_title || 'Unknown';
+                        } else {
+                            this.jobLogs = ['Failed to load logs for this job.'];
+                            this.jobLogsTitle = 'Error';
+                        }
+                    } catch (err) {
+                        console.error('Error fetching job logs:', err);
+                        this.jobLogs = ['Error loading logs.'];
+                        this.jobLogsTitle = 'Error';
+                    } finally {
+                        this.loadingJobLogs = false;
+                    }
+                },
+                async checkDatabaseHealth() {
+                    try {
+                        const res = await fetch('/api/db/check');
+                        const data = await res.json();
+                        if (data.needs_migration || data.status === 'error') {
+                            this.dbMigrationError = data.message || 'Database structure is outdated';
+                            this.showDbMigrationModal = true;
+                        }
+                    } catch (err) {
+                        console.error('Error checking database health:', err);
+                        // If server-side init had an error, show it
+                        if (window.serverDbError) {
+                            this.dbMigrationError = window.serverDbError;
+                            this.showDbMigrationModal = true;
+                        }
+                    }
+                },
+                async migrateDatabase() {
+                    this.migratingDatabase = true;
+                    try {
+                        const res = await fetch('/api/db/migrate', { method: 'POST' });
+                        const data = await res.json();
+                        if (data.status === 'success') {
+                            this.showToastMessage('Database updated successfully!');
+                            this.showDbMigrationModal = false;
+                            // Reload the page to ensure everything is fresh
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1000);
+                        } else {
+                            this.showToastMessage(data.message || 'Database migration failed');
+                        }
+                    } catch (err) {
+                        console.error('Error migrating database:', err);
+                        this.showToastMessage('Failed to migrate database. Please check the logs.');
+                    } finally {
+                        this.migratingDatabase = false;
+                    }
+                },
                 formatJobTime(job) {
                     // Use started_at for running jobs, created_at for others
                     const timeStr = (job.status === 'running' && job.started_at) ? job.started_at : job.created_at;
                     if (!timeStr) return '—';
                     try {
-                        const date = new Date(timeStr);
+                        // Parse the date string - handle both UTC and local time formats
+                        let date = new Date(timeStr);
+                        
+                        // If the date is invalid or in the future (likely timezone issue), try parsing as UTC
+                        if (isNaN(date.getTime()) || date > new Date()) {
+                            // Try parsing as UTC if it's an ISO string without timezone
+                            if (timeStr.includes('T') && !timeStr.includes('Z') && !timeStr.includes('+') && !timeStr.includes('-', 10)) {
+                                date = new Date(timeStr + 'Z');
+                            } else {
+                                date = new Date(timeStr);
+                            }
+                        }
+                        
                         // Use currentTime for reactivity (updates every second)
                         const now = new Date(this.currentTime);
                         const diffMs = now - date;
-                        const diffSeconds = Math.floor(diffMs / 1000);
-                        const diffMinutes = Math.floor(diffSeconds / 60);
-                        const diffHours = Math.floor(diffMinutes / 60);
                         
-                        // Show relative time for recent jobs (< 1 hour)
-                        if (diffMinutes < 1) {
-                            return `${diffSeconds}s ago`;
-                        } else if (diffMinutes < 60) {
-                            return `${diffMinutes}m ago`;
-                        } else if (diffHours < 24) {
-                            return `${diffHours}h ${diffMinutes % 60}m ago`;
+                        // If still negative or invalid, the date might be in UTC
+                        // Try to parse it as UTC explicitly
+                        if (diffMs < 0 || isNaN(diffMs)) {
+                            // If the string looks like UTC (has Z or +00:00), parse it correctly
+                            if (timeStr.includes('Z') || timeStr.includes('+00:00') || timeStr.match(/\+\d{2}:\d{2}$/)) {
+                                // Already has timezone info, should parse correctly
+                                date = new Date(timeStr);
+                            } else if (timeStr.includes('T')) {
+                                // ISO format without timezone, assume UTC
+                                date = new Date(timeStr + 'Z');
+                            }
+                            
+                            // If still invalid, just show the time as-is
+                            if (isNaN(date.getTime())) {
+                                return date.toLocaleTimeString(undefined, {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    timeZoneName: 'short'
+                                });
+                            }
+                            
+                            // Recalculate diff with corrected date
+                            const correctedDiffMs = now - date;
+                            if (correctedDiffMs < 0 || isNaN(correctedDiffMs)) {
+                                return date.toLocaleTimeString(undefined, {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    timeZoneName: 'short'
+                                });
+                            }
+                            // Use corrected diff
+                            const correctedDiffSeconds = Math.floor(Math.abs(correctedDiffMs) / 1000);
+                            const correctedDiffMinutes = Math.floor(correctedDiffSeconds / 60);
+                            
+                            // Show relative time for recent jobs (< 5 minutes)
+                            if (correctedDiffMinutes < 1) {
+                                return `${correctedDiffSeconds}s ago`;
+                            } else if (correctedDiffMinutes < 5) {
+                                return `${correctedDiffMinutes}m ago`;
+                            }
+                            
+                            // For jobs over 5 minutes, show actual local time
+                            const timeStr = date.toLocaleTimeString(undefined, {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                timeZoneName: 'short'
+                            });
+                            const dateStr = date.toLocaleDateString(undefined, {
+                                year: '2-digit',
+                                month: '2-digit',
+                                day: '2-digit'
+                            });
+                            return `${dateStr}, ${timeStr}`;
                         }
                         
-                        // For older jobs, show actual time
-                        return date.toLocaleTimeString(undefined, {
+                        const diffSeconds = Math.floor(Math.abs(diffMs) / 1000);
+                        const diffMinutes = Math.floor(diffSeconds / 60);
+                        
+                        // Show relative time for recent jobs (< 5 minutes)
+                        if (diffMinutes < 1) {
+                            return `${diffSeconds}s ago`;
+                        } else if (diffMinutes < 5) {
+                            return `${diffMinutes}m ago`;
+                        }
+                        
+                        // For jobs over 5 minutes, show actual local time
+                        const timeStr = date.toLocaleTimeString(undefined, {
                             hour: '2-digit',
                             minute: '2-digit',
-                            second: '2-digit'
+                            second: '2-digit',
+                            timeZoneName: 'short'
+                        });
+                        const dateStr = date.toLocaleDateString(undefined, {
+                            year: '2-digit',
+                            month: '2-digit',
+                            day: '2-digit'
+                        });
+                        return `${dateStr}, ${timeStr}`;
+                    } catch (e) {
+                        // If parsing fails, try to format the raw string
+                        try {
+                            const fallbackDate = new Date(timeStr);
+                            if (!isNaN(fallbackDate.getTime())) {
+                                const timeStrFormatted = fallbackDate.toLocaleTimeString(undefined, {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    timeZoneName: 'short'
+                                });
+                                const dateStrFormatted = fallbackDate.toLocaleDateString(undefined, {
+                                    year: '2-digit',
+                                    month: '2-digit',
+                                    day: '2-digit'
+                                });
+                                return `${dateStrFormatted}, ${timeStrFormatted}`;
+                            }
+                        } catch (e2) {
+                            // If all else fails, return a shortened version of the ISO string
+                            return timeStr.length > 20 ? timeStr.substring(0, 20) + '...' : timeStr;
+                        }
+                        return timeStr.length > 20 ? timeStr.substring(0, 20) + '...' : timeStr;
+                    }
+                },
+                formatJobTimeTooltip(job) {
+                    // Use started_at for running jobs, created_at for others
+                    const timeStr = (job.status === 'running' && job.started_at) ? job.started_at : job.created_at;
+                    if (!timeStr) return '—';
+                    try {
+                        let date = new Date(timeStr);
+                        
+                        // Handle UTC timestamps
+                        if (isNaN(date.getTime()) || date > new Date()) {
+                            if (timeStr.includes('Z') || timeStr.includes('+00:00') || timeStr.match(/\+\d{2}:\d{2}$/)) {
+                                date = new Date(timeStr);
+                            } else if (timeStr.includes('T')) {
+                                date = new Date(timeStr + 'Z');
+                            }
+                        }
+                        
+                        if (isNaN(date.getTime())) {
+                            return timeStr;
+                        }
+                        
+                        // Always show full date and time in tooltip
+                        return date.toLocaleString(undefined, {
+                            year: '2-digit',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            timeZoneName: 'short'
                         });
                     } catch (e) {
                         return timeStr;
                     }
                 },
+                toggleAutoScroll() {
+                    this.autoScroll = !this.autoScroll;
+                    if (this.autoScroll) {
+                        this.scrollToBottom();
+                    }
+                },
+                scrollToBottom() {
+                    this.$nextTick(() => {
+                        const el = document.getElementById('terminal');
+                        if(el) {
+                            el.scrollTop = el.scrollHeight;
+                        }
+                    });
+                },
+                async loadHistoricalLogs() {
+                    try {
+                        const res = await fetch('/api/jobs/logs');
+                        if (res.ok) {
+                            const data = await res.json();
+                            // Prepend historical logs to current logs
+                            this.logs = [...data.logs, ...this.logs];
+                            // Keep only last 1000 lines
+                            if (this.logs.length > 1000) {
+                                this.logs = this.logs.slice(-1000);
+                            }
+                            if (this.autoScroll) {
+                                this.scrollToBottom();
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error loading historical logs:', error);
+                    }
+                },
                 // ... UTILS ...
                 formatUpdatedDate(raw) {
                     if(!raw) return 'Never';
-                    return new Date(raw).toLocaleDateString();
+                    try {
+                        const date = new Date(raw);
+                        if (isNaN(date.getTime())) return 'Never';
+                        
+                        const now = new Date();
+                        const diffMs = now - date;
+                        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                        
+                        // Same day
+                        if (diffDays === 0) {
+                            return 'Today';
+                        }
+                        
+                        // Days
+                        if (diffDays < 7) {
+                            return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+                        }
+                        
+                        // Weeks
+                        const diffWeeks = Math.floor(diffDays / 7);
+                        if (diffWeeks < 4) {
+                            return `${diffWeeks} ${diffWeeks === 1 ? 'week' : 'weeks'} ago`;
+                        }
+                        
+                        // Months
+                        const diffMonths = Math.floor(diffDays / 30);
+                        if (diffMonths < 12) {
+                            return `${diffMonths} ${diffMonths === 1 ? 'month' : 'months'} ago`;
+                        }
+                        
+                        // Years
+                        const diffYears = Math.floor(diffDays / 365);
+                        return `${diffYears} ${diffYears === 1 ? 'year' : 'years'} ago`;
+                    } catch (e) {
+                        return 'Never';
+                    }
+                },
+                formatUpdatedDateShort(raw) {
+                    if(!raw) return 'Never';
+                    try {
+                        const date = new Date(raw);
+                        if (isNaN(date.getTime())) return 'Never';
+                        
+                        const now = new Date();
+                        const diffMs = now - date;
+                        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                        
+                        // Same day
+                        if (diffDays === 0) {
+                            return 'Today';
+                        }
+                        
+                        // Days
+                        if (diffDays < 7) {
+                            return `${diffDays}d ago`;
+                        }
+                        
+                        // Weeks
+                        const diffWeeks = Math.floor(diffDays / 7);
+                        if (diffWeeks < 4) {
+                            return `${diffWeeks}w ago`;
+                        }
+                        
+                        // Months
+                        const diffMonths = Math.floor(diffDays / 30);
+                        if (diffMonths < 12) {
+                            return `${diffMonths}mo ago`;
+                        }
+                        
+                        // Years
+                        const diffYears = Math.floor(diffDays / 365);
+                        return `${diffYears}y ago`;
+                    } catch (e) {
+                        return 'Never';
+                    }
+                },
+                formatUpdatedDateTooltip(raw) {
+                    if(!raw) return 'Never updated';
+                    try {
+                        const date = new Date(raw);
+                        if (isNaN(date.getTime())) return 'Never updated';
+                        return date.toLocaleString(undefined, {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                    } catch (e) {
+                        return 'Never updated';
+                    }
+                },
+                getLastUpdatedClass(raw) {
+                    if(!raw) return 'bg-gray-700/50 text-gray-400';
+                    try {
+                        const date = new Date(raw);
+                        if (isNaN(date.getTime())) return 'bg-gray-700/50 text-gray-400';
+                        
+                        const now = new Date();
+                        const diffMs = now - date;
+                        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                        
+                        // If 4 days or less, show in green to indicate it's newer
+                        if (diffDays <= 4) {
+                            return 'bg-green-500/20 text-green-400 border border-green-500/30';
+                        }
+                        
+                        return 'bg-gray-700/50 text-gray-400';
+                    } catch (e) {
+                        return 'bg-gray-700/50 text-gray-400';
+                    }
                 },
                 showToastMessage(msg) {
                     this.toastMessage = msg;
@@ -2318,6 +2840,13 @@
             },
             mounted() {
               this.initialized = true;
+              // Check for database issues on mount
+              if (window.serverDbError) {
+                  this.dbMigrationError = window.serverDbError;
+                  this.showDbMigrationModal = true;
+              } else {
+                  this.checkDatabaseHealth();
+              }
               this.fetchGlobalSettings();
               this.fetchSubscriptions(true); // Immediate on mount
               this.setupStream();
