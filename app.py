@@ -120,117 +120,143 @@ def dict_factory(cursor, row):
     return {col[0]: row[idx] for idx, col in enumerate(cursor.description)}
 
 def init_db():
-    conn = get_db()
-    c = conn.cursor()
-
+    """Initialize database schema and run migrations. Returns (success, error_message)"""
     try:
-        c.execute("PRAGMA journal_mode=WAL;")
-        c.execute("PRAGMA busy_timeout = 30000;")  # 30 seconds
+        conn = get_db()
+        c = conn.cursor()
+
+        try:
+            c.execute("PRAGMA journal_mode=WAL;")
+            c.execute("PRAGMA busy_timeout = 30000;")  # 30 seconds
+        except Exception as e:
+            logging.warning(f"Could not set SQLite pragmas: {e}")
+
+        # Subscriptions (Series)
+        c.execute('''CREATE TABLE IF NOT EXISTS subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            url TEXT UNIQUE,
+            artist TEXT,
+            thumbnail TEXT,
+            last_updated DATETIME
+        )''')
+
+        # Episodes
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS episodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subscription_id INTEGER,
+                title TEXT,
+                url TEXT,
+                ep_num INTEGER,
+                thumbnail TEXT,
+                cached_thumbnail TEXT,
+                downloaded BOOLEAN DEFAULT 0,
+                file_path TEXT,
+                published_date DATETIME,
+                FOREIGN KEY(subscription_id) REFERENCES subscriptions(id)
+            )
+        ''')
+
+        # Download Jobs
+        c.execute('''CREATE TABLE IF NOT EXISTS jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comic_title TEXT,
+            status TEXT, -- 'running', 'completed', 'failed'
+            log TEXT,
+            created_at DATETIME
+        )''')
+        
+        # Migrate jobs table to add started_at and finished_at if they don't exist
+        c.execute("PRAGMA table_info(jobs)")
+        cols = [row[1] for row in c.fetchall()]
+        if "started_at" not in cols:
+            c.execute("ALTER TABLE jobs ADD COLUMN started_at DATETIME")
+        if "finished_at" not in cols:
+            c.execute("ALTER TABLE jobs ADD COLUMN finished_at DATETIME")
+        if "is_auto" not in cols:
+            c.execute("ALTER TABLE jobs ADD COLUMN is_auto BOOLEAN DEFAULT 0")
+
+        # Global settings
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        ''')
+        
+        # Per-series settings
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS series_settings (
+                subscription_id INTEGER PRIMARY KEY,
+                auto_download_latest BOOLEAN DEFAULT 0,
+                schedule_day INTEGER,
+                schedule_time TEXT,
+                format_override TEXT,
+                path_template_override TEXT,
+                FOREIGN KEY(subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE
+            )
+        ''')
+        
+        # Migrate existing series_settings table to add new columns if they don't exist
+        c.execute("PRAGMA table_info(series_settings)")
+        cols = [row[1] for row in c.fetchall()]
+        if "format_override" not in cols:
+            c.execute("ALTER TABLE series_settings ADD COLUMN format_override TEXT")
+        if "path_template_override" not in cols:
+            c.execute("ALTER TABLE series_settings ADD COLUMN path_template_override TEXT")
+        if "download_all_after_cache" not in cols:
+            c.execute("ALTER TABLE series_settings ADD COLUMN download_all_after_cache BOOLEAN DEFAULT 0")
+        
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS episodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subscription_id INTEGER NOT NULL,
+                ep_num INTEGER NOT NULL,
+                title TEXT,
+                thumbnail TEXT,
+                cached_thumbnail TEXT,
+                url TEXT,
+                downloaded INTEGER DEFAULT 0,
+                file_path TEXT,
+                UNIQUE(subscription_id, ep_num)
+            )
+        """)
+        # Ensure episodes.download_error exists (for caution indicator on failed downloads)
+        c.execute("PRAGMA table_info(episodes)")
+        cols = [row[1] for row in c.fetchall()]
+        if "download_error" not in cols:
+            c.execute("ALTER TABLE episodes ADD COLUMN download_error INTEGER DEFAULT 0")
+        
+        # Processing status table to track currently processing series
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS processing_status (
+                subscription_id INTEGER PRIMARY KEY,
+                status TEXT, -- 'caching', 'processing', 'idle'
+                started_at DATETIME,
+                FOREIGN KEY(subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE
+            )
+    ''')
+        
+        conn.commit()
+        conn.close()
+        return True, None
+    except sqlite3.OperationalError as e:
+        error_msg = f"Database structure error: {str(e)}. The database may need to be migrated."
+        logging.error(error_msg)
+        return False, error_msg
     except Exception as e:
-        logging.warning(f"Could not set SQLite pragmas: {e}")
-
-    # Subscriptions (Series)
-    c.execute('''CREATE TABLE IF NOT EXISTS subscriptions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        url TEXT UNIQUE,
-        artist TEXT,
-        thumbnail TEXT,
-        last_updated DATETIME
-    )''')
-
-    # Episodes
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS episodes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            subscription_id INTEGER,
-            title TEXT,
-            url TEXT,
-            ep_num INTEGER,
-            thumbnail TEXT,
-            cached_thumbnail TEXT,
-            downloaded BOOLEAN DEFAULT 0,
-            file_path TEXT,
-            published_date DATETIME,
-            FOREIGN KEY(subscription_id) REFERENCES subscriptions(id)
-        )
-    ''')
-
-    # Download Jobs
-    c.execute('''CREATE TABLE IF NOT EXISTS jobs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        comic_title TEXT,
-        status TEXT, -- 'running', 'completed', 'failed'
-        log TEXT,
-        created_at DATETIME
-    )''')
-    
-    # Migrate jobs table to add started_at and finished_at if they don't exist
-    c.execute("PRAGMA table_info(jobs)")
-    cols = [row[1] for row in c.fetchall()]
-    if "started_at" not in cols:
-        c.execute("ALTER TABLE jobs ADD COLUMN started_at DATETIME")
-    if "finished_at" not in cols:
-        c.execute("ALTER TABLE jobs ADD COLUMN finished_at DATETIME")
-
-    # Global settings
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    ''')
-    
-    # Per-series settings
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS series_settings (
-            subscription_id INTEGER PRIMARY KEY,
-            auto_download_latest BOOLEAN DEFAULT 0,
-            schedule_day INTEGER,
-            schedule_time TEXT,
-            format_override TEXT,
-            path_template_override TEXT,
-            FOREIGN KEY(subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE
-        )
-    ''')
-    
-    # Migrate existing series_settings table to add new columns if they don't exist
-    c.execute("PRAGMA table_info(series_settings)")
-    cols = [row[1] for row in c.fetchall()]
-    if "format_override" not in cols:
-        c.execute("ALTER TABLE series_settings ADD COLUMN format_override TEXT")
-    if "path_template_override" not in cols:
-        c.execute("ALTER TABLE series_settings ADD COLUMN path_template_override TEXT")
-    if "download_all_after_cache" not in cols:
-        c.execute("ALTER TABLE series_settings ADD COLUMN download_all_after_cache BOOLEAN DEFAULT 0")
-    
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS episodes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            subscription_id INTEGER NOT NULL,
-            ep_num INTEGER NOT NULL,
-            title TEXT,
-            thumbnail TEXT,
-            cached_thumbnail TEXT,
-            url TEXT,
-            downloaded INTEGER DEFAULT 0,
-            file_path TEXT,
-            UNIQUE(subscription_id, ep_num)
-        )
-    """)
-    # Ensure episodes.download_error exists (for caution indicator on failed downloads)
-    c.execute("PRAGMA table_info(episodes)")
-    cols = [row[1] for row in c.fetchall()]
-    if "download_error" not in cols:
-        c.execute("ALTER TABLE episodes ADD COLUMN download_error INTEGER DEFAULT 0")
-    
-    conn.commit()
-    conn.close()
+        error_msg = f"Database initialization error: {str(e)}"
+        logging.error(error_msg)
+        return False, error_msg
 
 # Initialize DB on startup
+DB_INIT_ERROR = None
 if not os.path.exists('/app/db'):
     os.makedirs('/app/db')
-init_db()
+success, error = init_db()
+if not success:
+    DB_INIT_ERROR = error
 
 def get_setting(key, default=None):
     conn = get_db()
@@ -606,7 +632,7 @@ def safe_insert_episode(c, conn, subscription_id, title, url, ep_num, thumbnail,
         logging.exception("safe_insert_episode error")
         return False
 
-def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
+def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force_rescan=False):
     """
     Scrape episodes for a series and cache their thumbnails.
 
@@ -659,11 +685,28 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
                     else f"{series_url}?page={page}"
                 )
 
-                r = requests.get(paged_url, headers=headers)
+                # Retry logic for network issues
+                max_retries = 3
+                r = None
+                for retry in range(max_retries):
+                    try:
+                        r = requests.get(paged_url, headers=headers, timeout=30)
+                        if r.status_code == 200:
+                            break
+                        elif retry < max_retries - 1:
+                            logging.warning(f"[SCRAPER] Page {page} returned {r.status_code}, retrying ({retry + 1}/{max_retries})...")
+                            time.sleep(2)  # Wait before retry
+                    except Exception as e:
+                        if retry < max_retries - 1:
+                            logging.warning(f"[SCRAPER] Error fetching page {page}: {e}, retrying ({retry + 1}/{max_retries})...")
+                            time.sleep(2)
+                        else:
+                            logging.error(f"[SCRAPER] Failed to fetch page {page} after {max_retries} attempts: {e}")
+                            raise
 
-                if r.status_code != 200:
+                if not r or r.status_code != 200:
                     logging.warning(
-                        f"[SCRAPER] Page {page} returned {r.status_code}, stopping."
+                        f"[SCRAPER] Page {page} returned {r.status_code if r else 'None'}, stopping."
                     )
                     break
 
@@ -671,10 +714,28 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
                 episode_items = soup.select("li[id^='episode_']")
 
                 if not episode_items:
-                    logging.info(
-                        f"[SCRAPER] No episodes found on page {page}, stopping."
-                    )
-                    break
+                    # For initial scrape (not first_page_only), check if we've seen episodes before
+                    # If this is page 1 and we have no episodes, something is wrong
+                    # If this is a later page, it might be the end
+                    if first_page_only or page == 1:
+                        logging.warning(
+                            f"[SCRAPER] No episodes found on page {page} (first_page_only={first_page_only}), stopping."
+                        )
+                        break
+                    else:
+                        # For later pages, check if we've scraped any episodes yet
+                        # If we have, this might be the end. If not, it's an error.
+                        if scraped == 0:
+                            logging.warning(
+                                f"[SCRAPER] No episodes found on page {page} and no episodes scraped yet, stopping."
+                            )
+                            break
+                        else:
+                            logging.info(
+                                f"[SCRAPER] No episodes found on page {page}, but {scraped} episodes already scraped. "
+                                f"Assuming end of series."
+                            )
+                            break
 
                 new_items_on_page = 0
                 duplicate_detected = False
@@ -692,6 +753,7 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
                         continue
 
                     # Stop if we loop past the last page and see duplicates
+                    # During force_rescan, we still want to stop on duplicates (means we've looped)
                     if link in seen_urls:
                         logging.info(
                             f"[SCRAPER] Duplicate episode detected. "
@@ -823,12 +885,18 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
                 if duplicate_detected:
                     break
 
-                if new_items_on_page == 0:
+                # During a force_rescan, continue checking pages even if no new episodes found
+                # (to find any missing episodes that might be on later pages)
+                if new_items_on_page == 0 and not force_rescan:
                     logging.info(
                         f"[SCRAPER] No NEW episodes on page {page}. "
                         f"Stopping for sub_id={sub_id}."
                     )
                     break
+                elif new_items_on_page == 0 and force_rescan:
+                    logging.info(
+                        f"[SCRAPER] No NEW episodes on page {page}, but continuing (force_rescan mode) for sub_id={sub_id}."
+                    )
 
                 # If first_page_only is True, stop after processing the first page
                 if first_page_only:
@@ -933,16 +1001,23 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
                         "Error closing database connection in scrape_episodes"
                     )
 
-            # Clear progress for this URL + subscription so polling stops
-            update_processing_status(series_url, status="idle")
-            update_processing_status(sub_id, status="idle")
-
             logging.info(f"[SCRAPER] Finished. Total episodes scraped: {scraped}")
+            
+            # Clear progress for URL-level (used by add modal)
+            update_processing_status(series_url, status="idle")
             
             # Trigger download of all episodes if flag was set (after connection is closed)
             # Use a thread-safe check to prevent duplicate triggers
             if download_all_flag and sub_id:
                 logging.info(f"[SCRAPER] download_all_flag is True for sub_id={sub_id}, starting trigger_download_all thread")
+                # Update status to show we're preparing the download (don't set to idle yet)
+                update_processing_status(
+                    sub_id,
+                    status="processing",
+                    title="Preparing download...",
+                    subtitle="Initializing download of all episodes"
+                )
+                
                 # Double-check the flag is still cleared to prevent race conditions
                 def trigger_download_all():
                     global DOWNLOAD_ALL_IN_PROGRESS
@@ -1030,8 +1105,12 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
                                     with app.test_request_context(json=download_payload):
                                         result = start_download()
                                         logging.info(f"[SCRAPER] start_download() returned: {result}")
+                                    # Download started successfully - the job will update PROCESSES with job_id
+                                    # The frontend will see this when it polls
                                 except Exception as dl_err:
                                     logging.exception(f"[SCRAPER] Error calling start_download() for sub_id={sub_id}: {dl_err}")
+                                    # On error, clear processing status
+                                    update_processing_status(sub_id, status="idle")
                                     raise
                                 logging.info(f"[SCRAPER] Successfully triggered download of all episodes for sub_id={sub_id}")
                         finally:
@@ -1041,10 +1120,15 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False):
                         # Remove from in-progress set on error
                         with DOWNLOAD_ALL_LOCK:
                             DOWNLOAD_ALL_IN_PROGRESS.discard(sub_id)
+                        # Clear processing status on error
+                        update_processing_status(sub_id, status="idle")
                     # Note: We don't need a finally block here because we already removed it before calling start_download()
                 
                 # Run in background thread with a small delay to ensure transaction is committed
                 threading.Thread(target=trigger_download_all, daemon=True).start()
+            else:
+                # No download_all flag - clear progress normally
+                update_processing_status(sub_id, status="idle")
 
 # --- DOWNLOAD WORKER ---
 def run_download_process(job_id, cmd, subscription_id, format_choice, separate, downloaded_latest, start_ch, end_ch, path_template_override=None):
@@ -1069,16 +1153,24 @@ def run_download_process(job_id, cmd, subscription_id, format_choice, separate, 
             # Fall back: treat as a single shell string
             cmd = [cmd]
 
-    # Mark job as running
+    # Mark job as running (use UTC time for consistency)
+    from datetime import timezone
     c.execute(
-        "UPDATE jobs SET status = ?, started_at = CURRENT_TIMESTAMP WHERE id = ?",
-        ("running", job_id),
+        "UPDATE jobs SET status = ?, started_at = ? WHERE id = ?",
+        ("running", datetime.now(timezone.utc).isoformat(), job_id),
     )
     conn.commit()
 
     # Track that this subscription has a running job
     if subscription_id is not None:
         PROCESSES[subscription_id] = {"job_id": job_id}
+        # Update processing status to show download is running
+        update_processing_status(
+            subscription_id,
+            status="processing",
+            title="Downloading episodes...",
+            subtitle=f"Job #{job_id} in progress"
+        )
 
     logging.info(f"Starting command: {' '.join(cmd)}")
     LOG_QUEUE.put(f"[Job {job_id}] Starting: {' '.join(cmd)}")
@@ -1128,6 +1220,13 @@ def run_download_process(job_id, cmd, subscription_id, format_choice, separate, 
         bufsize=1,
         universal_newlines=True,
     )
+    
+    # Store the process in PROCESSES for cancellation
+    with PROCESS_LOCK:
+        if subscription_id is not None:
+            PROCESSES[subscription_id] = {"job_id": job_id, "process": proc, "subscription_id": subscription_id}
+        # Also store by job_id for easier lookup
+        PROCESSES[job_id] = {"job_id": job_id, "process": proc, "subscription_id": subscription_id}
 
     # Stream output in real-time
     stdout_lines = []
@@ -1159,9 +1258,27 @@ def run_download_process(job_id, cmd, subscription_id, format_choice, separate, 
     else:
         LOG_QUEUE.put(f"[Job {job_id}] ✗ Failed with exit code {retcode}")
 
-    success = (retcode == 0 and "Download complete!" in stdout)
+    # Check for download errors in stdout (even if exit code is 0)
+    has_download_error = "Download error" in stdout or "cannot identify image file" in stdout or "Failed to download" in stdout
+    
+    # Check if we got "Download complete!" message
+    has_complete_message = "Download complete!" in stdout
+    
+    # Determine expected vs actual episodes downloaded
+    expected_episodes = None
+    if start_ch is not None and end_ch is not None:
+        expected_episodes = end_ch - start_ch + 1
+    elif downloaded_latest:
+        expected_episodes = 1
+    
+    # Determine success: exit code 0, has complete message, no download errors
+    success = (retcode == 0 and has_complete_message and not has_download_error)
+    
     errors_encountered = False
     status = "completed" if success else "failed"
+    
+    # Initialize actual_episodes_downloaded for summary message
+    actual_episodes_downloaded = 0
 
     # --- Mark episodes as downloaded / error flags -------------------------
     if subscription_id is not None:
@@ -1221,6 +1338,47 @@ def run_download_process(job_id, cmd, subscription_id, format_choice, separate, 
                 )
                 errors_encountered = True
         conn.commit()
+        
+        # Count actual episodes downloaded AFTER marking them in database
+        # (files are moved during post-processing, so temp directory count is unreliable)
+        actual_episodes_downloaded = 0
+        if expected_episodes and expected_episodes > 1:
+            try:
+                # Count episodes that were actually marked as downloaded for this subscription
+                # in the expected range
+                count_query = """
+                    SELECT COUNT(*) as cnt FROM episodes
+                    WHERE subscription_id = ? AND downloaded = 1
+                """
+                count_params = [subscription_id]
+                
+                if start_ch is not None:
+                    count_query += " AND ep_num >= ?"
+                    count_params.append(start_ch)
+                if end_ch is not None:
+                    count_query += " AND ep_num <= ?"
+                    count_params.append(end_ch)
+                
+                count_row = c.execute(count_query, count_params).fetchone()
+                if count_row:
+                    actual_episodes_downloaded = count_row.get("cnt", 0) or 0
+                
+                # If we expected multiple episodes but got fewer than expected, check if it's a failure
+                # Only mark as failure if we have download errors OR got significantly fewer (less than 50%)
+                if has_download_error and actual_episodes_downloaded < expected_episodes:
+                    # Has errors and partial download = failure
+                    success = False
+                    status = "failed"
+                elif not has_download_error and actual_episodes_downloaded < expected_episodes:
+                    # No errors but partial download - might be legitimate (some episodes might not exist)
+                    # Only mark as failure if we got significantly fewer (less than 50% of expected)
+                    if actual_episodes_downloaded < (expected_episodes * 0.5):
+                        success = False
+                        has_download_error = True
+                        status = "failed"
+            except Exception as e:
+                logging.exception(f"Error counting downloaded episodes: {e}")
+                # If counting fails, don't change success status based on count
 
     # --- POST-PROCESSING: move files from tmp/job_<id> into final path ------
     try:
@@ -1557,14 +1715,16 @@ def run_download_process(job_id, cmd, subscription_id, format_choice, separate, 
             status = "warning"
 
     # --- Update job final status -------------------------------------------
+    # Use UTC time for consistency
+    from datetime import timezone
     c.execute(
         """
         UPDATE jobs
         SET status = ?,
-            finished_at = CURRENT_TIMESTAMP
+            finished_at = ?
         WHERE id = ?
         """,
-        (status, job_id),
+        (status, datetime.now(timezone.utc).isoformat(), job_id),
     )
     conn.commit()
     
@@ -1622,11 +1782,51 @@ def run_download_process(job_id, cmd, subscription_id, format_choice, separate, 
                     thumbnail=thumbnail_url
                 )
 
-    # Clear PROCESSES entry for this subscription, if any
-    if subscription_id is not None and subscription_id in PROCESSES:
-        del PROCESSES[subscription_id]
+    # Clear PROCESSES entry for this subscription and job, if any
+    with PROCESS_LOCK:
+        if subscription_id is not None and subscription_id in PROCESSES:
+            del PROCESSES[subscription_id]
+        if job_id in PROCESSES:
+            del PROCESSES[job_id]
 
+    # Build summary message for logs (after we know actual_episodes_downloaded)
+    summary_parts = []
+    if has_download_error or not success:
+        summary_parts.append("✗ Download had errors")
+    if expected_episodes and 'actual_episodes_downloaded' in locals() and actual_episodes_downloaded > 0:
+        summary_parts.append(f"Downloaded {actual_episodes_downloaded} of {expected_episodes} expected episodes")
+        if actual_episodes_downloaded < expected_episodes:
+            summary_parts.append("(partial download)")
+        else:
+            summary_parts.append("(all episodes downloaded and post-processed)")
+    elif expected_episodes and success and not has_download_error:
+        # If we don't have a count but succeeded, assume all were downloaded
+        summary_parts.append(f"Downloaded {expected_episodes} of {expected_episodes} expected episodes (all episodes downloaded and post-processed)")
+    
+    if summary_parts:
+        summary_msg = " | ".join(summary_parts)
+        LOG_QUEUE.put(f"[Job {job_id}] {summary_msg}")
+        # Also append to stdout for database storage
+        stdout += f"\n{summary_msg}"
+    
     logging.info(f"Job {job_id} post-processing finished with status '{status}'")
+    
+    # Update job final status and save logs to database
+    from datetime import timezone
+    try:
+        c.execute(
+            """
+            UPDATE jobs
+            SET status = ?,
+                finished_at = ?,
+                log = ?
+            WHERE id = ?
+            """,
+            (status, datetime.now(timezone.utc).isoformat(), stdout, job_id),
+        )
+        conn.commit()
+    except Exception as e:
+        logging.error(f"Error updating job status/logs in database: {e}")
     
     # Close database connection
     try:
@@ -1647,22 +1847,58 @@ def update_processing_status(key, status=None, page=None, episode=None, title=No
     try:
         if isinstance(key, int):
             # subscription-card style update
-            if status == 'idle':
+            sub_id = key
+            conn = get_db()
+            try:
+                c = conn.cursor()
+                if status == 'idle':
+                    with PROCESS_LOCK:
+                        PROCESSES.pop(key, None)
+                    # Remove from database
+                    c.execute("DELETE FROM processing_status WHERE subscription_id = ?", (sub_id,))
+                    conn.commit()
+                    return
+                
+                # Update in-memory PROCESSES
                 with PROCESS_LOCK:
-                    PROCESSES.pop(key, None)
-                return
-            with PROCESS_LOCK:
-                proc_data = {
-                    "title": title if title is not None else PROCESSES.get(key, {}).get("title"),
-                    "subtitle": subtitle if subtitle is not None else PROCESSES.get(key, {}).get("subtitle")
-                }
-                if progress is not None:
-                    proc_data["progress"] = progress
-                if current_episode is not None:
-                    proc_data["current_episode"] = current_episode
-                if total_episodes is not None:
-                    proc_data["total_episodes"] = total_episodes
-                PROCESSES[key] = proc_data
+                    proc_data = {
+                        "status": status or "caching",
+                        "title": title if title is not None else PROCESSES.get(key, {}).get("title"),
+                        "subtitle": subtitle if subtitle is not None else PROCESSES.get(key, {}).get("subtitle")
+                    }
+                    if progress is not None:
+                        proc_data["progress"] = progress
+                    if current_episode is not None:
+                        proc_data["current_episode"] = current_episode
+                    if total_episodes is not None:
+                        proc_data["total_episodes"] = total_episodes
+                    PROCESSES[key] = proc_data
+                
+                # Update database
+                from datetime import timezone
+                c.execute("""
+                    INSERT INTO processing_status (subscription_id, status, started_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(subscription_id) DO UPDATE SET
+                        status = excluded.status,
+                        started_at = CASE 
+                            WHEN excluded.status != 'idle' AND status = 'idle' THEN excluded.started_at
+                            ELSE started_at
+                        END
+                """, (sub_id, status or "caching", datetime.now(timezone.utc).isoformat()))
+                conn.commit()
+            except Exception as e:
+                logging.exception(f"Error updating processing_status table: {e}")
+                if conn:
+                    try:
+                        conn.rollback()
+                    except:
+                        pass
+            finally:
+                try:
+                    conn.close()
+                except:
+                    pass
             return
 
         # key is a series URL (string)
@@ -1718,6 +1954,7 @@ def auto_download_worker():
                 SELECT
                     s.id AS subscription_id,
                     s.url AS series_url,
+                    s.title AS series_title,
                     ss.auto_download_latest AS auto_download_latest,
                     ss.schedule_day AS schedule_day,
                     ss.schedule_time AS schedule_time
@@ -1733,6 +1970,7 @@ def auto_download_worker():
             for row in rows:
                 sub_id = row["subscription_id"]
                 series_url = row["series_url"]
+                series_title = row.get("series_title") or "Unknown Series"
                 auto_latest = row["auto_download_latest"]
                 schedule_day = row["schedule_day"]
                 schedule_time = row["schedule_time"]
@@ -1810,7 +2048,38 @@ def auto_download_worker():
                         logging.info("[AUTO] Skipping auto-download for sub_id=%s - job %s already running", sub_id, running_job["id"])
                         continue
                 
-                LOG_QUEUE.put(f"[AUTO] Checking sub_id={sub_id} ({series_url})")
+                # Check database for processing status (most reliable)
+                processing_check = c.execute("""
+                    SELECT status FROM processing_status 
+                    WHERE subscription_id = ? AND status IN ('caching', 'processing')
+                """, (sub_id,)).fetchone()
+                if processing_check:
+                    LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - currently processing (database check)")
+                    logging.info("[AUTO] Skipping sub_id=%s - currently processing (database check)", sub_id)
+                    continue
+                
+                # Final check right before scraping to prevent race conditions
+                with PROCESS_LOCK:
+                    if sub_id in PROCESSES:
+                        proc_info = PROCESSES[sub_id]
+                        if isinstance(proc_info, dict):
+                            if "status" in proc_info and proc_info.get("status") in ("caching", "processing"):
+                                LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - currently processing")
+                                logging.info("[AUTO] Skipping sub_id=%s - currently processing", sub_id)
+                                continue
+                            if "job_id" in proc_info:
+                                LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - download job in progress")
+                                logging.info("[AUTO] Skipping sub_id=%s - download job in progress", sub_id)
+                                continue
+                
+                if series_url in EPISODE_PROGRESS:
+                    progress_info = EPISODE_PROGRESS[series_url]
+                    if progress_info.get("status") in ("caching", "processing"):
+                        LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - currently being scraped")
+                        logging.info("[AUTO] Skipping sub_id=%s - currently being scraped", sub_id)
+                        continue
+                
+                LOG_QUEUE.put(f"[AUTO] Checking {series_title}")
                 logging.info("[AUTO] Scraping episodes for sub_id=%s (%s)", sub_id, series_url)
                 # Only scrape first page for auto-checks since new episodes are at the top
                 scrape_episodes(sub_id, series_url, first_page_only=True)
@@ -1862,13 +2131,31 @@ def auto_download_worker():
                     )
 
                 if latest and not latest["downloaded"]:
-                    # Check if a download is already in progress for this subscription
-                    # 1. Check if subscription is in PROCESSES (has active job)
+                    # Check database for processing status first (most reliable)
+                    processing_check = c.execute("""
+                        SELECT status FROM processing_status 
+                        WHERE subscription_id = ? AND status IN ('caching', 'processing')
+                    """, (sub_id,)).fetchone()
+                    if processing_check:
+                        LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - currently processing (database check)")
+                        logging.info("[AUTO] Skipping auto-download for sub_id=%s - currently processing (database check)", sub_id)
+                        continue
+                    
+                    # Final check right before creating download job to prevent race conditions
+                    # 1. Check if subscription is in PROCESSES (has active job or is processing)
                     with PROCESS_LOCK:
                         if sub_id in PROCESSES:
-                            logging.info("[AUTO] Skipping auto-download for sub_id=%s - download already in progress (job_id=%s)", 
-                                        sub_id, PROCESSES[sub_id].get("job_id"))
-                            continue
+                            proc_info = PROCESSES[sub_id]
+                            if isinstance(proc_info, dict):
+                                if "status" in proc_info and proc_info.get("status") in ("caching", "processing"):
+                                    LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - currently processing")
+                                    logging.info("[AUTO] Skipping auto-download for sub_id=%s - currently processing", sub_id)
+                                    continue
+                                if "job_id" in proc_info:
+                                    LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - download already in progress (job_id=%s)", proc_info.get("job_id"))
+                                    logging.info("[AUTO] Skipping auto-download for sub_id=%s - download already in progress (job_id=%s)", 
+                                                sub_id, proc_info.get("job_id"))
+                                    continue
                     
                     # 2. Check if "download all" is in progress
                     with DOWNLOAD_ALL_LOCK:
@@ -1876,7 +2163,27 @@ def auto_download_worker():
                             logging.info("[AUTO] Skipping auto-download for sub_id=%s - download_all already in progress", sub_id)
                             continue
                     
-                    # 3. Check if there are multiple undownloaded episodes and a recent job might be downloading them
+                    # 3. Check if there are any running jobs for this subscription (by subscription_id in PROCESSES or by comic_title)
+                    # This is more comprehensive than just checking PROCESSES
+                    series_title_for_job = c.execute(
+                        "SELECT title FROM subscriptions WHERE id = ?",
+                        (sub_id,)
+                    ).fetchone()
+                    
+                    if series_title_for_job:
+                        # Check for any running job with this comic_title
+                        running_job_check = c.execute("""
+                            SELECT id, status FROM jobs 
+                            WHERE status = 'running' 
+                            AND comic_title = ?
+                            LIMIT 1
+                        """, (series_title_for_job["title"],)).fetchone()
+                        if running_job_check:
+                            LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - job {running_job_check['id']} already running")
+                            logging.info("[AUTO] Skipping auto-download for sub_id=%s - job %s already running", sub_id, running_job_check["id"])
+                            continue
+                    
+                    # 4. Check if there are multiple undownloaded episodes and a recent job might be downloading them
                     # This helps prevent auto-download from triggering while "download all" is running
                     undownloaded_count = c.execute("""
                         SELECT COUNT(*) as cnt FROM episodes 
@@ -1884,20 +2191,23 @@ def auto_download_worker():
                     """, (sub_id,)).fetchone()
                     
                     if undownloaded_count and undownloaded_count.get("cnt", 0) > 1:
-                        # Check if there's a very recent running job (within last 2 minutes)
+                        # Check if there's a very recent running job (within last 5 minutes) for this series
                         # This might be a "download all" that just started
-                        recent_job = c.execute("""
-                            SELECT id FROM jobs 
-                            WHERE status = 'running' 
-                            AND started_at > datetime('now', '-2 minutes')
-                            ORDER BY id DESC
-                            LIMIT 1
-                        """).fetchone()
-                        
-                        if recent_job:
-                            logging.info("[AUTO] Skipping auto-download for sub_id=%s - recent job running (job_id=%s), may be downloading multiple episodes", 
-                                        sub_id, recent_job["id"])
-                            continue
+                        if series_title_for_job:
+                            recent_job = c.execute("""
+                                SELECT id FROM jobs 
+                                WHERE status = 'running' 
+                                AND comic_title = ?
+                                AND started_at > datetime('now', '-5 minutes')
+                                ORDER BY id DESC
+                                LIMIT 1
+                            """, (series_title_for_job["title"],)).fetchone()
+                            
+                            if recent_job:
+                                LOG_QUEUE.put(f"[AUTO] Skipping sub_id={sub_id} - recent job {recent_job['id']} running, may be downloading multiple episodes")
+                                logging.info("[AUTO] Skipping auto-download for sub_id=%s - recent job running (job_id=%s), may be downloading multiple episodes", 
+                                            sub_id, recent_job["id"])
+                                continue
                     
                     logging.info("[AUTO] Auto-downloading latest episode id=%s (ep_num=%s) for sub_id=%s", 
                                 latest["id"], latest["ep_num"], sub_id)
@@ -1923,7 +2233,8 @@ def auto_download_worker():
                         "subscription_id": sub_id,
                         "latest": True,
                         "format": format_choice,
-                        "path_template": path_template
+                        "path_template": path_template,
+                        "_auto": True  # Mark this as an AUTO job
                     }
 
                     # Re-use your existing /api/download logic
@@ -1951,7 +2262,74 @@ def auto_download_worker():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', db_error=DB_INIT_ERROR)
+
+@app.route('/api/db/check', methods=['GET'])
+def check_database():
+    """Check if database is healthy and up to date"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Try to access all required tables and columns
+        required_checks = [
+            ("jobs", ["id", "comic_title", "status", "log", "created_at", "started_at", "finished_at", "is_auto"]),
+            ("episodes", ["id", "subscription_id", "ep_num", "downloaded", "download_error"]),
+            ("subscriptions", ["id", "title", "url", "artist", "thumbnail"]),
+            ("series_settings", ["subscription_id", "auto_download_latest", "format_override", "path_template_override", "download_all_after_cache"]),
+            ("settings", ["key", "value"]),
+            ("processing_status", ["subscription_id", "status", "started_at"]),
+        ]
+        
+        missing_items = []
+        for table, columns in required_checks:
+            try:
+                c.execute(f"SELECT COUNT(*) FROM {table}")
+                c.fetchone()
+                # Check columns
+                c.execute(f"PRAGMA table_info({table})")
+                existing_cols = [row[1] for row in c.fetchall()]
+                for col in columns:
+                    if col not in existing_cols:
+                        missing_items.append(f"{table}.{col}")
+            except sqlite3.OperationalError as e:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Database table '{table}' error: {str(e)}",
+                    "needs_migration": True
+                }), 500
+        
+        conn.close()
+        
+        if missing_items:
+            return jsonify({
+                "status": "error",
+                "message": f"Database is missing required columns: {', '.join(missing_items)}",
+                "needs_migration": True,
+                "missing_items": missing_items
+            }), 200
+        
+        return jsonify({"status": "ok", "needs_migration": False})
+    except Exception as e:
+        logging.exception("Error checking database health")
+        return jsonify({
+            "status": "error",
+            "message": f"Database check failed: {str(e)}",
+            "needs_migration": True
+        }), 500
+
+@app.route('/api/db/migrate', methods=['POST'])
+def migrate_database():
+    """Attempt to migrate/update the database structure"""
+    try:
+        success, error = init_db()
+        if success:
+            return jsonify({"status": "success", "message": "Database migrated successfully"})
+        else:
+            return jsonify({"status": "error", "message": error}), 500
+    except Exception as e:
+        logging.exception("Error migrating database")
+        return jsonify({"status": "error", "message": f"Migration failed: {str(e)}"}), 500
 
 # 1. SUBSCRIPTIONS
 @app.route('/api/subscriptions', methods=['GET', 'POST'])
@@ -2348,6 +2726,61 @@ def get_episodes(sub_id):
         except Exception:
             pass
 
+@app.route('/api/subscription/<int:sub_id>/rescan', methods=['POST'])
+def rescan_episodes(sub_id):
+    """Manually trigger a full re-scrape of episodes for a series"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Get the subscription URL
+        row = c.execute(
+            "SELECT url FROM subscriptions WHERE id = ?",
+            (sub_id,)
+        ).fetchone()
+        
+        if not row:
+            return jsonify({"status": "error", "message": "Subscription not found"}), 404
+        
+        series_url = row[0]
+        
+        # Check if already processing
+        with PROCESS_LOCK:
+            if sub_id in PROCESSES:
+                proc_info = PROCESSES[sub_id]
+                if isinstance(proc_info, dict):
+                    if "status" in proc_info and proc_info.get("status") in ("caching", "processing"):
+                        return jsonify({"status": "error", "message": "Series is currently being processed"}), 409
+        
+        if series_url in EPISODE_PROGRESS:
+            progress_info = EPISODE_PROGRESS[series_url]
+            if progress_info.get("status") in ("caching", "processing"):
+                return jsonify({"status": "error", "message": "Series is currently being scraped"}), 409
+        
+        # Trigger re-scrape in background thread (full scrape, not first_page_only, with force_rescan)
+        def scrape_in_background():
+            try:
+                logging.info(f"[RESCAN] Starting full re-scrape for sub_id={sub_id}")
+                scrape_episodes(sub_id, series_url, first_page_only=False, force_rescan=True)
+                logging.info(f"[RESCAN] Completed full re-scrape for sub_id={sub_id}")
+            except Exception as e:
+                logging.exception(f"Error in background re-scrape for sub_id={sub_id}: {e}")
+                update_processing_status(sub_id, status="idle")
+        
+        thread = threading.Thread(target=scrape_in_background, daemon=True)
+        thread.start()
+        
+        return jsonify({"status": "success", "message": "Re-scan started"})
+        
+    except Exception as e:
+        logging.exception(f"Error in rescan_episodes: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 @app.route('/api/episodes/delete', methods=['POST'])
 def delete_episodes():
     ids = request.json.get('ids', [])
@@ -2397,9 +2830,12 @@ def start_download():
             # 1. Check if subscription is in PROCESSES (has active job)
             with PROCESS_LOCK:
                 if subscription_id in PROCESSES:
-                    existing_job_id = PROCESSES[subscription_id].get("job_id")
-                    logging.warning(f"[DOWNLOAD] Skipping duplicate download for sub_id={subscription_id} - download already in progress (job_id={existing_job_id})")
-                    return jsonify({"status": "error", "message": "Download already in progress for this series"}), 409
+                    proc_info = PROCESSES[subscription_id]
+                    # Only reject if it has a job_id (actual download job), not just a status update
+                    if isinstance(proc_info, dict) and proc_info.get("job_id"):
+                        existing_job_id = proc_info.get("job_id")
+                        logging.warning(f"[DOWNLOAD] Skipping duplicate download for sub_id={subscription_id} - download already in progress (job_id={existing_job_id})")
+                        return jsonify({"status": "error", "message": "Download already in progress for this series"}), 409
             
             # 2. Check if "download all" is in progress
             with DOWNLOAD_ALL_LOCK:
@@ -2459,9 +2895,23 @@ def start_download():
         format_choice = format_choice or "images"
         path_template = path_template or PATH_TEMPLATE_DEFAULT
 
+        # Check if this is an AUTO job
+        # AUTO jobs are created by auto_download_worker and always have latest=True
+        # We can also check if there's a thread-local flag, but for now use the pattern
+        is_auto = 0
+        # Check if latest is True and subscription_id is set (typical AUTO pattern)
+        # Also check if the request has an auto flag (we'll set this in auto_download_worker)
+        if data.get("latest") and subscription_id and data.get("_auto", False):
+            is_auto = 1
+        # Fallback: if latest=True and subscription_id, assume it's AUTO (manual downloads usually specify start/end)
+        elif data.get("latest") and subscription_id and not data.get("start") and not data.get("end"):
+            is_auto = 1
+        
+        # Use UTC time for consistency
+        from datetime import timezone
         cur.execute(
-            "INSERT INTO jobs (comic_title, status, log, created_at) VALUES (?, ?, ?, ?)",
-            (comic_title, "running", "Starting...", datetime.now())
+            "INSERT INTO jobs (comic_title, status, log, created_at, is_auto) VALUES (?, ?, ?, ?, ?)",
+            (comic_title, "running", "Starting...", datetime.now(timezone.utc).isoformat(), is_auto)
         )
         job_id = cur.lastrowid
         conn.commit()
@@ -2656,9 +3106,87 @@ def list_jobs():
     try:
         cur = conn.cursor()
         rows = cur.execute(
-            "SELECT id, comic_title, status, created_at, started_at FROM jobs ORDER BY id DESC LIMIT 100"
+            "SELECT id, comic_title, status, created_at, started_at, log, COALESCE(is_auto, 0) as is_auto FROM jobs ORDER BY id DESC LIMIT 100"
         ).fetchall()
-        return jsonify([dict(r) for r in rows])
+        # Convert is_auto to boolean for frontend
+        jobs = []
+        for row in rows:
+            job = dict(row)
+            job['is_auto'] = bool(job.get('is_auto', 0))
+            jobs.append(job)
+        return jsonify(jobs)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+@app.route('/api/jobs/logs', methods=['GET'])
+def get_job_logs():
+    """Return recent logs from all jobs for the logs viewer"""
+    try:
+        # Get logs from the last 100 jobs
+        conn = get_db()
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT log FROM jobs WHERE log IS NOT NULL AND log != '' ORDER BY id DESC LIMIT 100"
+        ).fetchall()
+        
+        # Extract log lines and reverse to show oldest first
+        all_logs = []
+        for row in rows:
+            log_text = row[0] if row[0] else ""
+            if log_text:
+                # Split by newlines and add job markers
+                lines = log_text.split('\n')
+                for line in lines:
+                    if line.strip():
+                        all_logs.append(line.strip())
+        
+        # Also check for AUTO logs in the queue (recent ones)
+        # We'll get the last 500 lines from recent jobs
+        all_logs = all_logs[-500:] if len(all_logs) > 500 else all_logs
+        
+        return jsonify({"logs": all_logs})
+    except Exception as e:
+        logging.exception(f"Error in get_job_logs: {e}")
+        return jsonify({"logs": []})
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+@app.route('/api/jobs/<int:job_id>/logs', methods=['GET'])
+def get_single_job_logs(job_id):
+    """Return logs for a specific job"""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        row = cur.execute(
+            "SELECT log, comic_title, status FROM jobs WHERE id = ?",
+            (job_id,)
+        ).fetchone()
+        
+        if not row:
+            return jsonify({"status": "error", "message": "Job not found"}), 404
+        
+        log_text = row[0] if row[0] else "No logs available for this job."
+        comic_title = row[1] or "Unknown"
+        status = row[2] or "unknown"
+        
+        # Split logs into lines
+        log_lines = log_text.split('\n') if log_text else []
+        
+        return jsonify({
+            "job_id": job_id,
+            "comic_title": comic_title,
+            "status": status,
+            "logs": log_lines
+        })
+    except Exception as e:
+        logging.exception(f"Error in get_single_job_logs: {e}")
+        return jsonify({"status": "error", "message": "Failed to fetch logs"}), 500
     finally:
         try:
             conn.close()
