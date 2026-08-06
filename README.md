@@ -88,26 +88,27 @@ A web-based GUI application for managing and downloading webtoons using **[webto
 - Docker and Docker Compose (for containerized deployment)
 - Internet connection for scraping and downloading webtoons
 
-## Quick Start (Docker Compose)
+## Quick Start (Docker)
 
-The fastest way to get started is using Docker Compose:
+### Pull from GitHub Container Registry
 
 ```bash
-# Clone the repository
+docker pull ghcr.io/akasgaming/webtoon-manager:latest
+```
+
+Or with Compose (pulls the published image; builds locally if needed):
+
+```bash
 git clone https://github.com/AKASGaming/webtoon-manager.git
-cd webtoonhub
-
-# Start the application
-docker-compose up -d
-
-# View logs (optional)
-docker-compose logs -f
-
-# Stop the application
-docker-compose down
+cd webtoon-manager
+docker compose up -d
 ```
 
 Access the web interface at `http://localhost:8128`
+
+Image tags: `latest`, release versions (e.g. `0.9.3`), and `sha-<commit>`.
+
+> First publish creates a **private** package. To make it public: GitHub → Packages → `webtoon-manager` → Package settings → Change visibility.
 
 ## Installation
 
@@ -116,12 +117,12 @@ Access the web interface at `http://localhost:8128`
 1. Clone this repository:
    ```bash
    git clone https://github.com/AKASGaming/webtoon-manager.git
-   cd webtoonhub
+   cd webtoon-manager
    ```
 
 2. Start the application:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 3. Access the web interface at `http://localhost:8128`
@@ -133,6 +134,7 @@ The `docker-compose.yml` file is included in the repository:
 ```yaml
 services:
   webtoon-manager:
+    image: ghcr.io/akasgaming/webtoon-manager:latest
     build: .
     container_name: webtoon_manager
     ports:
@@ -157,7 +159,7 @@ services:
 1. Clone this repository:
    ```bash
    git clone https://github.com/AKASGaming/webtoon-manager.git
-   cd webtoonhub
+   cd webtoon-manager
    ```
 
 2. Create a virtual environment:

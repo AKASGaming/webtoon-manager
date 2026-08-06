@@ -1,5 +1,6 @@
 services:
   webtoon-manager:
+    image: ghcr.io/akasgaming/webtoon-manager:latest
     build: .
     container_name: webtoon_manager
     ports:
