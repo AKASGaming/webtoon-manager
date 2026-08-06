@@ -1,0 +1,81 @@
+name: Update webtoon-downloader
+
+on:
+  schedule:
+    # Every Monday at 12:00 UTC
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for newer webtoon-downloader
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reqPath = 'requirements.txt';
+            const contents = fs.readFileSync(reqPath, 'utf8');
+            const match = contents.match(/^webtoon-downloader(==([^\s#]+))?/m);
+            if (!match) {
+              core.setFailed('webtoon-downloader not found in requirements.txt');
+              return;
+            }
+            const current = match[2] || null;
+
+            const res = await fetch('https://pypi.org/pypi/webtoon-downloader/json');
+            if (!res.ok) {
+              core.setFailed(`PyPI request failed: ${res.status}`);
+              return;
+            }
+            const data = await res.json();
+            const latest = data.info.version;
+
+            core.info(`Current: ${current ?? 'unpinned'}`);
+            core.info(`Latest:  ${latest}`);
+            core.setOutput('current', current ?? '');
+            core.setOutput('latest', latest);
+
+            const needsUpdate = current !== latest;
+            core.setOutput('needs_update', needsUpdate ? 'true' : 'false');
+
+            if (needsUpdate) {
+              const updated = contents.replace(
+                /^webtoon-downloader(==[^\s#]+)?/m,
+                `webtoon-downloader==${latest}`
+              );
+              fs.writeFileSync(reqPath, updated);
+              core.info(`Updated requirements.txt to webtoon-downloader==${latest}`);
+            } else {
+              core.info('webtoon-downloader is already up to date');
+            }
+
+      - name: Create pull request
+        if: steps.check.outputs.needs_update == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump webtoon-downloader to ${{ steps.check.outputs.latest }}"
+          title: "chore: bump webtoon-downloader to ${{ steps.check.outputs.latest }}"
+          body: |
+            Automated update of **webtoon-downloader** from PyPI.
+
+            | | Version |
+            |---|---|
+            | Previous | `${{ steps.check.outputs.current }}` |
+            | Latest | `${{ steps.check.outputs.latest }}` |
+
+            - PyPI: https://pypi.org/project/webtoon-downloader/${{ steps.check.outputs.latest }}/
+            - Changelog / releases: https://github.com/Zehina/Webtoon-Downloader/releases
+          branch: chore/update-webtoon-downloader
+          delete-branch: true
+          labels: dependencies

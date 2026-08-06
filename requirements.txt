@@ -1,5 +1,5 @@
 flask
-webtoon-downloader
+webtoon-downloader==2.4.0
 requests
 beautifulsoup4
 lxml

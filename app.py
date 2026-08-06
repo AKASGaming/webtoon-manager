@@ -470,21 +470,14 @@ def scrape_webtoon_meta(url):
         logging.error("Invalid URL passed to scraper.")
         return None
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0 Safari/537.36"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-    }
+    headers = _scrape_request_headers()
     requests.packages.urllib3.disable_warnings(
         requests.packages.urllib3.exceptions.InsecureRequestWarning
     )
 
     # --- Fetch page ---
     try:
-        resp = requests.get(url, headers=headers, timeout=15, verify=False)
+        resp = requests.get(_cache_bust_url(url), headers=headers, timeout=15, verify=False)
         resp.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Request Error during series scrape: {e}")
@@ -612,6 +605,27 @@ def scrape_webtoon_meta(url):
 
 
 
+def _scrape_request_headers():
+    """Headers that discourage CDN/proxy reuse of stale Webtoon list pages."""
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "Referer": "https://www.webtoons.com/",
+    }
+
+def _cache_bust_url(url):
+    """Append a unique query param so list-page fetches are not served from cache."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}_={int(time.time() * 1000)}"
+
 def safe_insert_episode(c, conn, subscription_id, title, url, ep_num, thumbnail, cached_thumbnail, published_date):
     """Insert episode only if that URL for the subscription does not already exist.
     This avoids requiring a DB migration for a UNIQUE constraint while preventing duplicates."""
@@ -641,7 +655,7 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force
       * sees a duplicate episode URL (looped past last page), or
       * reaches an optional `limit`, or
       * `first_page_only` is True (stops after first page).
-    - Caches each episode thumbnail locally.
+    - Caches thumbnails only for newly discovered episodes (or missing caches).
     - Updates the subscription's `last_updated`.
     - Updates both:
         - subscription-level progress (for processing cards)
@@ -655,13 +669,14 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force
         conn = None
         highest_ep_num = None   # Track highest episode number for progress
         current_ep_num = None   # Track current episode being processed
+        incremental = bool(first_page_only)
 
         try:
             conn = get_db()
             c = conn.cursor()
             last_updated_set = False
 
-            headers = {"User-Agent": "Mozilla/5.0"}
+            headers = _scrape_request_headers()
 
             page = 1
             scraped = 0
@@ -671,8 +686,8 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force
             update_processing_status(
                 sub_id,
                 status="caching",
-                title="Processing series...",
-                subtitle="Starting episode scrape",
+                title="Checking for updates..." if incremental else "Processing series...",
+                subtitle="Fetching latest episode list" if incremental else "Starting episode scrape",
                 progress=0.0,
             )
 
@@ -684,22 +699,26 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force
                     if "?" in series_url
                     else f"{series_url}?page={page}"
                 )
+                # Bust CDN/proxy caches so auto-checks see newly published episodes
+                fetch_url = _cache_bust_url(paged_url)
 
                 # Retry logic for network issues
                 max_retries = 3
                 r = None
                 for retry in range(max_retries):
                     try:
-                        r = requests.get(paged_url, headers=headers, timeout=30)
+                        r = requests.get(fetch_url, headers=headers, timeout=30)
                         if r.status_code == 200:
                             break
                         elif retry < max_retries - 1:
                             logging.warning(f"[SCRAPER] Page {page} returned {r.status_code}, retrying ({retry + 1}/{max_retries})...")
                             time.sleep(2)  # Wait before retry
+                            fetch_url = _cache_bust_url(paged_url)
                     except Exception as e:
                         if retry < max_retries - 1:
                             logging.warning(f"[SCRAPER] Error fetching page {page}: {e}, retrying ({retry + 1}/{max_retries})...")
                             time.sleep(2)
+                            fetch_url = _cache_bust_url(paged_url)
                         else:
                             logging.error(f"[SCRAPER] Failed to fetch page {page} after {max_retries} attempts: {e}")
                             raise
@@ -782,7 +801,13 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force
                         highest_ep_num = ep_num
                     current_ep_num = ep_num
 
-                    original_thumb_url = thumb_tag["src"] if thumb_tag else None
+                    original_thumb_url = None
+                    if thumb_tag:
+                        original_thumb_url = (
+                            thumb_tag.get("src")
+                            or thumb_tag.get("data-url")
+                            or thumb_tag.get("data-src")
+                        )
 
                     # Date from a > span.date (as Webtoon displays it)
                     published_date = None
@@ -794,7 +819,34 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force
                         if raw_date:
                             published_date = raw_date
 
-                    # --- progress calculation ---
+                    # Skip known episodes: do not re-download thumbnails or re-insert.
+                    # Only backfill a missing cached thumbnail when one is available.
+                    existing = c.execute(
+                        "SELECT id, cached_thumbnail FROM episodes WHERE subscription_id = ? AND url = ?",
+                        (sub_id, link),
+                    ).fetchone()
+                    if existing:
+                        if not existing["cached_thumbnail"] and original_thumb_url:
+                            logging.info(
+                                f"[CACHE] EP {ep_num} → backfilling missing thumbnail (page {page})"
+                            )
+                            cached_thumb_url = cache_image(original_thumb_url)
+                            if cached_thumb_url:
+                                try:
+                                    c.execute(
+                                        "UPDATE episodes SET cached_thumbnail = ?, thumbnail = COALESCE(thumbnail, ?) WHERE id = ?",
+                                        (cached_thumb_url, original_thumb_url, existing["id"]),
+                                    )
+                                    conn.commit()
+                                except Exception:
+                                    logging.exception(
+                                        "Failed to backfill cached_thumbnail for ep_num=%s", ep_num
+                                    )
+                        if limit and scraped >= limit:
+                            break
+                        continue
+
+                    # --- progress calculation (new episodes only) ---
                     progress = 0.0
                     if highest_ep_num and highest_ep_num > 0 and current_ep_num:
                         # Episode 100 (highest): (100-100+1)/100 = 1% (just started)
@@ -813,8 +865,8 @@ def scrape_episodes(sub_id, series_url, limit=None, first_page_only=False, force
                     update_processing_status(
                         sub_id,
                         status="caching",
-                        title="Processing series...",
-                        subtitle=f"Caching – Episode {ep_num}, Page {page}",
+                        title="Checking for updates..." if incremental else "Processing series...",
+                        subtitle=f"New episode {ep_num}" if incremental else f"Caching – Episode {ep_num}, Page {page}",
                         progress=progress,
                         current_episode=current_ep_num,
                         total_episodes=highest_ep_num,
@@ -2083,6 +2135,14 @@ def auto_download_worker():
                 logging.info("[AUTO] Scraping episodes for sub_id=%s (%s)", sub_id, series_url)
                 # Only scrape first page for auto-checks since new episodes are at the top
                 scrape_episodes(sub_id, series_url, first_page_only=True)
+
+                # End the worker's read transaction so we see episodes committed by scrape_episodes.
+                # Without this, SQLite snapshot isolation keeps serving the pre-scrape DB view
+                # for the rest of this cycle (new episodes look missing).
+                try:
+                    conn.commit()
+                except Exception:
+                    logging.exception("[AUTO] Failed to refresh DB view after scrape for sub_id=%s", sub_id)
 
                 # Get series info for webhook
                 series_info = c.execute(
