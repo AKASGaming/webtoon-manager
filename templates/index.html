@@ -900,6 +900,21 @@
                                 </p>
                             </div>
                         </div>
+                        <div class="border-t border-gray-700 pt-4">
+                            <label class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fa-solid fa-rotate mr-2 text-green-400"></i>Force Recheck All Series
+                            </label>
+                            <p class="text-xs text-gray-500 mb-3">
+                                Re-scan every series for missing episodes and refresh episode metadata. Does not start any downloads.
+                            </p>
+                            <button type="button"
+                                    @click="forceRecheckAllSeries"
+                                    :disabled="recheckingAllSeries"
+                                    class="inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed text-white border border-gray-600 px-4 py-2 rounded-lg text-sm transition-colors">
+                                <i :class="recheckingAllSeries ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-arrows-rotate'"></i>
+                                <span>[[ recheckingAllSeries ? 'Rechecking…' : 'Recheck All Series' ]]</span>
+                            </button>
+                        </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-300 mb-2">
                                 <i class="fa-solid fa-bug mr-2 text-green-400"></i>Debug Mode
@@ -1109,9 +1124,28 @@
                         <h4 class="text-green-400 font-semibold mb-2 text-xs sm:text-sm uppercase tracking-wide">Credits & Acknowledgments</h4>
                         <div class="space-y-2 text-xs sm:text-sm">
                             <div class="bg-gray-900/50 rounded-lg p-2 sm:p-3 border border-gray-700">
-                                <p class="text-gray-300 mb-1 text-xs sm:text-sm">
-                                    <i class="fa-solid fa-terminal text-green-400 mr-2"></i>
-                                    <strong class="text-white">webtoon-downloader</strong>
+                                <p class="text-gray-300 mb-1 text-xs sm:text-sm flex flex-wrap items-center gap-2">
+                                    <span>
+                                        <i class="fa-solid fa-terminal text-green-400 mr-2"></i>
+                                        <strong class="text-white">webtoon-downloader</strong>
+                                    </span>
+                                    <span v-if="downloaderInfo.installed" class="font-mono text-green-400 text-xs">
+                                        v[[ downloaderInfo.installed ]]
+                                    </span>
+                                    <span v-else-if="downloaderInfo.loading" class="text-gray-500 text-xs">
+                                        <i class="fa-solid fa-spinner fa-spin mr-1"></i>Checking…
+                                    </span>
+                                    <span v-else class="text-gray-500 text-xs">version unknown</span>
+                                    <span v-if="downloaderInfo.updateAvailable"
+                                          class="inline-flex items-center gap-1 text-amber-300 bg-amber-900/40 border border-amber-700/60 rounded px-1.5 py-0.5 text-[10px] sm:text-xs font-medium">
+                                        <i class="fa-solid fa-circle-up"></i>
+                                        Update available<span v-if="downloaderInfo.latest"> (v[[ downloaderInfo.latest ]])</span>
+                                    </span>
+                                    <span v-else-if="downloaderInfo.installed && downloaderInfo.latest && !downloaderInfo.loading"
+                                          class="inline-flex items-center gap-1 text-green-300/90 text-[10px] sm:text-xs">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                        Up to date
+                                    </span>
                                 </p>
                                 <p class="text-gray-400 text-xs ml-5 sm:ml-6">
                                     This application uses the webtoon-downloader CLI tool for downloading episodes.
@@ -1238,7 +1272,7 @@
         const app = createApp({
             data() {
               return {
-                appVersion: 'v0.9.3',
+                appVersion: 'v0.9.4',
                 initialized: false,
                 currentView: 'subscriptions',
                 showAboutModal: false,
@@ -1262,7 +1296,14 @@
                 showDownloadOptionsModal: false,
                 showSubSettingsModal: false,
                 rescanningEpisodes: false,
-                rescanningEpisodes: false,
+                recheckingAllSeries: false,
+                downloaderInfo: {
+                    installed: null,
+                    latest: null,
+                    updateAvailable: false,
+                    loading: false,
+                    error: null,
+                },
                 showToast: false,
                 toastMessage: '',
                 toastTimeoutId: null,
@@ -2083,8 +2124,51 @@
                     }
                 },
                 openGlobalSettings() { this.showSettings = true; },
-                openAbout() { this.showAboutModal = true; },
+                async openAbout() {
+                    this.showAboutModal = true;
+                    await this.fetchDownloaderInfo();
+                },
                 closeGlobalSettings() { this.showSettings = false; },
+                async fetchDownloaderInfo() {
+                    this.downloaderInfo.loading = true;
+                    try {
+                        const res = await fetch('/api/webtoon-downloader/info');
+                        const data = await res.json();
+                        this.downloaderInfo.installed = data.installed || null;
+                        this.downloaderInfo.latest = data.latest || null;
+                        this.downloaderInfo.updateAvailable = !!data.update_available;
+                        this.downloaderInfo.error = data.error || null;
+                    } catch (error) {
+                        console.error('Error fetching webtoon-downloader info:', error);
+                        this.downloaderInfo.error = 'Failed to load version info';
+                    } finally {
+                        this.downloaderInfo.loading = false;
+                    }
+                },
+                async forceRecheckAllSeries() {
+                    if (this.recheckingAllSeries) return;
+                    this.recheckingAllSeries = true;
+                    try {
+                        const res = await fetch('/api/subscriptions/recheck', { method: 'POST' });
+                        const data = await res.json().catch(() => ({}));
+                        if (res.ok) {
+                            const count = data.count || 0;
+                            this.showToastMessage(
+                                count
+                                    ? `Recheck started for ${count} series (no downloads).`
+                                    : (data.message || 'No series to recheck.')
+                            );
+                            this.showSettings = false;
+                        } else {
+                            this.showToastMessage(`Error: ${data.message || 'Failed to start recheck'}`);
+                        }
+                    } catch (error) {
+                        console.error('Error starting full recheck:', error);
+                        this.showToastMessage('Error: Failed to start recheck.');
+                    } finally {
+                        this.recheckingAllSeries = false;
+                    }
+                },
                 async saveGlobalSettings() {
                     await fetch('/api/settings', {
                         method: 'POST',

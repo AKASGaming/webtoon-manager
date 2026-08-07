@@ -258,6 +258,68 @@ success, error = init_db()
 if not success:
     DB_INIT_ERROR = error
 
+def clear_orphaned_processing_status():
+    """
+    Remove processing_status rows that are not backed by a live in-memory process.
+
+    After a restart (or a crashed scrape), the DB can still say 'caching'/'processing'
+    while PROCESSES is empty — which makes auto-check skip every series forever.
+    """
+    with PROCESS_LOCK:
+        live_ids = {
+            key
+            for key, value in PROCESSES.items()
+            if isinstance(key, int)
+            and isinstance(value, dict)
+            and value.get("status") in ("caching", "processing")
+        }
+
+    conn = None
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            """
+            SELECT subscription_id, status, started_at
+            FROM processing_status
+            WHERE status IN ('caching', 'processing')
+            """
+        ).fetchall()
+        cleared = 0
+        for row in rows:
+            sub_id = row["subscription_id"]
+            if sub_id in live_ids:
+                continue
+            conn.execute(
+                "DELETE FROM processing_status WHERE subscription_id = ?",
+                (sub_id,),
+            )
+            cleared += 1
+            logging.info(
+                "[CLEANUP] Cleared stale processing_status for sub_id=%s (was %s, started_at=%s)",
+                sub_id,
+                row["status"],
+                row["started_at"],
+            )
+        if cleared:
+            conn.commit()
+            logging.info("[CLEANUP] Cleared %d orphaned processing_status row(s)", cleared)
+        return cleared
+    except Exception:
+        logging.exception("[CLEANUP] Failed to clear orphaned processing_status")
+        return 0
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+# Any leftover processing rows from a previous process are invalid after restart
+try:
+    clear_orphaned_processing_status()
+except Exception:
+    logging.exception("Failed initial processing_status cleanup")
+
 def get_setting(key, default=None):
     conn = get_db()
     try:
@@ -2019,6 +2081,9 @@ def auto_download_worker():
             logging.info("[AUTO] Cycle at %s – found %d subscriptions", now.isoformat(), len(rows))
             LOG_QUEUE.put(f"[AUTO] Auto-check cycle started - checking {len(rows)} subscriptions")
 
+            # Drop DB locks left by crashed/interrupted scrapes so checks aren't skipped forever
+            clear_orphaned_processing_status()
+
             for row in rows:
                 sub_id = row["subscription_id"]
                 series_url = row["series_url"]
@@ -2790,6 +2855,7 @@ def get_episodes(sub_id):
 def rescan_episodes(sub_id):
     """Manually trigger a full re-scrape of episodes for a series"""
     try:
+        clear_orphaned_processing_status()
         conn = get_db()
         c = conn.cursor()
         
@@ -2840,6 +2906,128 @@ def rescan_episodes(sub_id):
             conn.close()
         except Exception:
             pass
+
+# Serialize "recheck all" so only one bulk pass runs at a time
+RECHECK_ALL_LOCK = threading.Lock()
+RECHECK_ALL_RUNNING = False
+
+@app.route('/api/subscriptions/recheck', methods=['POST'])
+def recheck_all_subscriptions():
+    """
+    Force a full episode-list refresh for every subscription.
+    Finds missing episodes / updates metadata only — does not start downloads.
+    """
+    global RECHECK_ALL_RUNNING
+
+    clear_orphaned_processing_status()
+
+    with RECHECK_ALL_LOCK:
+        if RECHECK_ALL_RUNNING:
+            return jsonify({
+                "status": "error",
+                "message": "A full recheck is already running",
+            }), 409
+        RECHECK_ALL_RUNNING = True
+
+    conn = None
+    try:
+        conn = get_db()
+        conn.row_factory = dict_factory
+        rows = conn.execute(
+            "SELECT id, url, title FROM subscriptions ORDER BY id"
+        ).fetchall()
+    except Exception as e:
+        with RECHECK_ALL_LOCK:
+            RECHECK_ALL_RUNNING = False
+        logging.exception("Error listing subscriptions for recheck")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    if not rows:
+        with RECHECK_ALL_LOCK:
+            RECHECK_ALL_RUNNING = False
+        return jsonify({"status": "success", "message": "No subscriptions to recheck", "count": 0})
+
+    def recheck_worker(subscriptions):
+        global RECHECK_ALL_RUNNING
+        total = len(subscriptions)
+        LOG_QUEUE.put(f"[RECHECK] Starting full recheck of {total} series (no downloads)")
+        logging.info("[RECHECK] Starting full recheck of %d series", total)
+        try:
+            for index, sub in enumerate(subscriptions, start=1):
+                sub_id = sub["id"]
+                title = sub.get("title") or f"sub_id={sub_id}"
+                try:
+                    LOG_QUEUE.put(f"[RECHECK] ({index}/{total}) {title}")
+                    logging.info("[RECHECK] (%s/%s) scraping sub_id=%s", index, total, sub_id)
+                    scrape_episodes(
+                        sub_id,
+                        sub["url"],
+                        first_page_only=False,
+                        force_rescan=True,
+                    )
+                except Exception:
+                    logging.exception("[RECHECK] Failed for sub_id=%s", sub_id)
+                    update_processing_status(sub_id, status="idle")
+                    LOG_QUEUE.put(f"[RECHECK] Failed: {title}")
+            LOG_QUEUE.put(f"[RECHECK] Finished recheck of {total} series")
+            logging.info("[RECHECK] Finished recheck of %d series", total)
+        finally:
+            with RECHECK_ALL_LOCK:
+                RECHECK_ALL_RUNNING = False
+
+    threading.Thread(target=recheck_worker, args=(rows,), daemon=True).start()
+    return jsonify({
+        "status": "success",
+        "message": f"Recheck started for {len(rows)} series",
+        "count": len(rows),
+    })
+
+@app.route('/api/webtoon-downloader/info', methods=['GET'])
+def webtoon_downloader_info():
+    """Return installed webtoon-downloader version and whether a newer PyPI release exists."""
+    from importlib.metadata import PackageNotFoundError, version as pkg_version
+
+    installed = None
+    latest = None
+    update_available = False
+    error = None
+
+    try:
+        installed = pkg_version("webtoon-downloader")
+    except PackageNotFoundError:
+        installed = None
+        error = "webtoon-downloader is not installed"
+    except Exception as e:
+        error = str(e)
+
+    try:
+        resp = requests.get("https://pypi.org/pypi/webtoon-downloader/json", timeout=8)
+        resp.raise_for_status()
+        latest = resp.json().get("info", {}).get("version")
+        if installed and latest:
+            try:
+                from packaging.version import Version
+                update_available = Version(latest) > Version(installed)
+            except Exception:
+                update_available = latest != installed
+    except Exception as e:
+        logging.warning("Failed to fetch webtoon-downloader version from PyPI: %s", e)
+        if not error:
+            error = "Could not reach PyPI to check for updates"
+
+    return jsonify({
+        "status": "ok",
+        "installed": installed,
+        "latest": latest,
+        "update_available": update_available,
+        "error": error,
+    })
 
 @app.route('/api/episodes/delete', methods=['POST'])
 def delete_episodes():
